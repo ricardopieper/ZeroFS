@@ -1,6 +1,6 @@
 # ZeroFS - A SlateDB-based NFS Server
 
-ZeroFS is an NFS server implementation that uses SlateDB as its storage backend, offering a fundamentally different approach compared to typical S3FS implementations.
+ZeroFS is an NFS server implementation that uses [SlateDB](https://github.com/slatedb/slatedb) as its storage backend, offering a fundamentally different approach compared to typical S3FS implementations.
 
 <p align="center">
   <img src="assets/readme_storage_explanation.png" alt="Storage Architecture" width="500"/>
