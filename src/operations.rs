@@ -8,7 +8,6 @@ pub mod rename_ops;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::filesystem::CHUNK_SIZE;
     use crate::filesystem::SlateDbFs;
     use crate::inode::Inode;

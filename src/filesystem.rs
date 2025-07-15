@@ -47,7 +47,7 @@ pub fn get_current_time() -> (u64, u32) {
 }
 
 pub const CHUNK_SIZE: usize = 64 * 1024;
-pub const LOCK_SHARD_COUNT: usize = 1024;
+pub const LOCK_SHARD_COUNT: usize = 1024 * 100;
 
 #[derive(Clone)]
 pub struct SlateDbFs {
