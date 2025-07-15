@@ -37,7 +37,7 @@ mount -t nfs -o nolocks,vers=3,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ mnt
 
 ### Linux
 ```bash
-mount -t nfs -o vers=3,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt
+mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt
 ```
 
 ## Key Differences from S3FS
