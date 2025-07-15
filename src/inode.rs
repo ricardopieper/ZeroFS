@@ -96,15 +96,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (file.atime & 0xFFFFFFFF) as u32,
+                    seconds: file.atime as u32,
                     nseconds: file.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (file.mtime & 0xFFFFFFFF) as u32,
+                    seconds: file.mtime as u32,
                     nseconds: file.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (file.ctime & 0xFFFFFFFF) as u32,
+                    seconds: file.ctime as u32,
                     nseconds: file.ctime_nsec,
                 },
             },
@@ -123,15 +123,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (dir.atime & 0xFFFFFFFF) as u32,
+                    seconds: dir.atime as u32,
                     nseconds: dir.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (dir.mtime & 0xFFFFFFFF) as u32,
+                    seconds: dir.mtime as u32,
                     nseconds: dir.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (dir.ctime & 0xFFFFFFFF) as u32,
+                    seconds: dir.ctime as u32,
                     nseconds: dir.ctime_nsec,
                 },
             },
@@ -150,15 +150,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (symlink.atime & 0xFFFFFFFF) as u32,
+                    seconds: symlink.atime as u32,
                     nseconds: symlink.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (symlink.mtime & 0xFFFFFFFF) as u32,
+                    seconds: symlink.mtime as u32,
                     nseconds: symlink.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (symlink.ctime & 0xFFFFFFFF) as u32,
+                    seconds: symlink.ctime as u32,
                     nseconds: symlink.ctime_nsec,
                 },
             },
@@ -177,15 +177,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (special.atime & 0xFFFFFFFF) as u32,
+                    seconds: special.atime as u32,
                     nseconds: special.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (special.mtime & 0xFFFFFFFF) as u32,
+                    seconds: special.mtime as u32,
                     nseconds: special.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (special.ctime & 0xFFFFFFFF) as u32,
+                    seconds: special.ctime as u32,
                     nseconds: special.ctime_nsec,
                 },
             },
@@ -204,15 +204,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (special.atime & 0xFFFFFFFF) as u32,
+                    seconds: special.atime as u32,
                     nseconds: special.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (special.mtime & 0xFFFFFFFF) as u32,
+                    seconds: special.mtime as u32,
                     nseconds: special.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (special.ctime & 0xFFFFFFFF) as u32,
+                    seconds: special.ctime as u32,
                     nseconds: special.ctime_nsec,
                 },
             },
@@ -231,15 +231,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (special.atime & 0xFFFFFFFF) as u32,
+                    seconds: special.atime as u32,
                     nseconds: special.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (special.mtime & 0xFFFFFFFF) as u32,
+                    seconds: special.mtime as u32,
                     nseconds: special.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (special.ctime & 0xFFFFFFFF) as u32,
+                    seconds: special.ctime as u32,
                     nseconds: special.ctime_nsec,
                 },
             },
@@ -258,15 +258,15 @@ impl Inode {
                 fsid: 0,
                 fileid: inode_id,
                 atime: nfstime3 {
-                    seconds: (special.atime & 0xFFFFFFFF) as u32,
+                    seconds: special.atime as u32,
                     nseconds: special.atime_nsec,
                 },
                 mtime: nfstime3 {
-                    seconds: (special.mtime & 0xFFFFFFFF) as u32,
+                    seconds: special.mtime as u32,
                     nseconds: special.mtime_nsec,
                 },
                 ctime: nfstime3 {
-                    seconds: (special.ctime & 0xFFFFFFFF) as u32,
+                    seconds: special.ctime as u32,
                     nseconds: special.ctime_nsec,
                 },
             },
