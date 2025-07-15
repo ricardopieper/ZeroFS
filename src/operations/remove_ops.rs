@@ -19,17 +19,7 @@ impl SlateDbFs {
         let name = String::from_utf8_lossy(filename).to_string();
         let creds = Credentials::from_auth_context(auth);
 
-        let _dir_guard = self.lock_manager.acquire_write(dirid).await;
-
-        let dir_inode = self.load_inode(dirid).await?;
-        check_access(&dir_inode, &creds, AccessMode::Write)?;
-        check_access(&dir_inode, &creds, AccessMode::Execute)?;
-
-        let is_dir = matches!(dir_inode, Inode::Directory(_));
-        if !is_dir {
-            return Err(nfsstat3::NFS3ERR_NOTDIR);
-        }
-
+        // Look up the file_id without holding any locks
         let entry_key = Self::dir_entry_key(dirid, &name);
         let entry_data = self
             .db
@@ -42,15 +32,23 @@ impl SlateDbFs {
         bytes.copy_from_slice(&entry_data[..8]);
         let file_id = u64::from_le_bytes(bytes);
 
-        drop(_dir_guard);
-
-        // Use lock manager to acquire locks in proper order
-        let _multi_guard = self
+        // Now acquire both locks in sorted order
+        let _guards = self
             .lock_manager
             .acquire_multiple_write(vec![dirid, file_id])
             .await;
 
-        // Re-verify the entry still exists after acquiring locks
+        // Verify everything is still valid after acquiring locks
+        let dir_inode = self.load_inode(dirid).await?;
+        check_access(&dir_inode, &creds, AccessMode::Write)?;
+        check_access(&dir_inode, &creds, AccessMode::Execute)?;
+
+        let is_dir = matches!(dir_inode, Inode::Directory(_));
+        if !is_dir {
+            return Err(nfsstat3::NFS3ERR_NOTDIR);
+        }
+
+        // Re-verify the entry still exists and points to the same file
         let entry_data = self
             .db
             .get(&entry_key)
@@ -60,14 +58,11 @@ impl SlateDbFs {
 
         let mut verify_bytes = [0u8; 8];
         verify_bytes.copy_from_slice(&entry_data[..8]);
-        let verify_file_id = u64::from_le_bytes(verify_bytes);
 
-        if verify_file_id != file_id {
+        if u64::from_le_bytes(verify_bytes) != file_id {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
 
-        // Re-load inodes after acquiring locks
-        let dir_inode = self.load_inode(dirid).await?;
         let mut file_inode = self.load_inode(file_id).await?;
 
         check_sticky_bit_delete(&dir_inode, &file_inode, &creds)?;

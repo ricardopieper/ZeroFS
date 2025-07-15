@@ -46,18 +46,7 @@ impl SlateDbFs {
 
         let creds = Credentials::from_auth_context(auth);
 
-        let dir_locks_to_acquire = if from_dirid != to_dirid {
-            vec![from_dirid, to_dirid]
-        } else {
-            vec![from_dirid]
-        };
-
-        let _dir_guards = self
-            .lock_manager
-            .acquire_multiple_write(dir_locks_to_acquire)
-            .await;
-
-        // Now that directories are locked, safely look up the entries
+        // Look up all inode IDs without holding any locks
         let from_entry_key = Self::dir_entry_key(from_dirid, &from_name);
         let entry_data = self
             .db
@@ -90,7 +79,7 @@ impl SlateDbFs {
             None
         };
 
-        // Now determine all inodes we need to lock (including the files)
+        // Now determine all inodes we need to lock
         let mut all_inodes_to_lock = vec![from_dirid, source_inode_id];
         if from_dirid != to_dirid {
             all_inodes_to_lock.push(to_dirid);
@@ -99,15 +88,13 @@ impl SlateDbFs {
             all_inodes_to_lock.push(target_id);
         }
 
-        // Release directory locks and acquire all locks in order
-        drop(_dir_guards);
-
         let _guards = self
             .lock_manager
             .acquire_multiple_write(all_inodes_to_lock)
             .await;
 
-        // Re-verify the source still exists after acquiring all locks
+        // Now perform all checks and operations with locks held
+        // First re-verify that source still exists where we expect it
         let entry_data = self
             .db
             .get(&from_entry_key)
@@ -121,7 +108,6 @@ impl SlateDbFs {
             return Err(nfsstat3::NFS3ERR_NOENT);
         }
 
-        // Now perform all checks and operations with locks held
         // Re-load source inode to check for directory cycles
         let source_inode = self.load_inode(source_inode_id).await?;
         if matches!(source_inode, Inode::Directory(_))
