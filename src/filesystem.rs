@@ -1,3 +1,4 @@
+use crate::lock_manager::LockManager;
 use bytes::Bytes;
 use nfsserve::nfs::nfsstat3;
 use object_store::aws::{AmazonS3Builder, S3ConditionalPut};
@@ -10,7 +11,6 @@ use slatedb::{
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::RwLock;
 
 use crate::inode::{DirectoryInode, Inode, InodeId};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,7 +52,7 @@ pub const LOCK_SHARD_COUNT: usize = 1024;
 #[derive(Clone)]
 pub struct SlateDbFs {
     pub db: Arc<Db>,
-    pub inode_locks: Arc<Vec<Arc<RwLock<()>>>>,
+    pub lock_manager: Arc<LockManager>,
     pub next_inode_id: Arc<AtomicU64>,
 }
 
@@ -158,15 +158,11 @@ impl SlateDbFs {
             .await?;
         }
 
-        let mut locks = Vec::with_capacity(LOCK_SHARD_COUNT);
-
-        for _ in 0..LOCK_SHARD_COUNT {
-            locks.push(Arc::new(RwLock::new(())));
-        }
+        let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
 
         let fs = Self {
             db: db.clone(),
-            inode_locks: Arc::new(locks),
+            lock_manager,
             next_inode_id: Arc::new(AtomicU64::new(next_inode_id)),
         };
 
@@ -175,11 +171,6 @@ impl SlateDbFs {
 
     pub fn inode_key(inode_id: InodeId) -> Bytes {
         Bytes::from(format!("inode:{}", inode_id))
-    }
-
-    pub fn get_inode_lock(&self, inode_id: InodeId) -> Arc<RwLock<()>> {
-        let shard = (inode_id as usize) % LOCK_SHARD_COUNT;
-        self.inode_locks[shard].clone()
     }
 
     pub fn chunk_key_by_index(inode_id: InodeId, chunk_index: usize) -> Bytes {
@@ -302,14 +293,11 @@ impl SlateDbFs {
             .await?;
         }
 
-        let mut locks = Vec::with_capacity(LOCK_SHARD_COUNT);
-        for _ in 0..LOCK_SHARD_COUNT {
-            locks.push(Arc::new(RwLock::new(())));
-        }
+        let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
 
         let fs = Self {
             db: db.clone(),
-            inode_locks: Arc::new(locks),
+            lock_manager,
             next_inode_id: Arc::new(AtomicU64::new(next_inode_id)),
         };
 
@@ -414,21 +402,6 @@ mod tests {
             SlateDbFs::chunk_key_by_index(999, 999),
             Bytes::from("chunk:999/999")
         );
-    }
-
-    #[tokio::test]
-    async fn test_get_inode_lock() {
-        let fs = SlateDbFs::new_in_memory().await.unwrap();
-
-        let lock1 = fs.get_inode_lock(0);
-        let lock2 = fs.get_inode_lock(LOCK_SHARD_COUNT as u64);
-
-        assert!(Arc::ptr_eq(&lock1, &lock2));
-
-        let lock3 = fs.get_inode_lock(1);
-        let lock4 = fs.get_inode_lock(1 + LOCK_SHARD_COUNT as u64);
-
-        assert!(Arc::ptr_eq(&lock3, &lock4));
     }
 
     #[tokio::test]

@@ -1,17 +1,13 @@
-use nfsserve::nfs::{
-    fattr3, fileid3, nfsstat3, sattr3, set_gid3, set_mode3, set_uid3,
-};
+use nfsserve::nfs::{fattr3, fileid3, nfsstat3, sattr3, set_gid3, set_mode3, set_uid3};
 use nfsserve::vfs::AuthContext;
 use slatedb::{WriteBatch, config::WriteOptions};
 use std::sync::atomic::Ordering;
 use tracing::debug;
 
+use super::common::validate_filename;
 use crate::filesystem::{SlateDbFs, get_current_time, get_umask};
 use crate::inode::{Inode, SymlinkInode};
-use crate::permissions::{
-    AccessMode, Credentials, check_access,
-};
-use super::common::validate_filename;
+use crate::permissions::{AccessMode, Credentials, check_access};
 
 impl SlateDbFs {
     pub async fn process_symlink(
@@ -31,8 +27,7 @@ impl SlateDbFs {
 
         let linkname_str = String::from_utf8_lossy(linkname);
 
-        let lock = self.get_inode_lock(dirid);
-        let _guard = lock.write().await;
+        let _guard = self.lock_manager.acquire_write(dirid).await;
         let mut dir_inode = self.load_inode(dirid).await?;
 
         let creds = Credentials::from_auth_context(auth);
@@ -155,15 +150,11 @@ impl SlateDbFs {
             fileid, linkdirid, linkname_str
         );
 
-        // Get locks in a consistent order to avoid deadlocks
-        let (lock1, lock2) = if fileid < linkdirid {
-            (self.get_inode_lock(fileid), self.get_inode_lock(linkdirid))
-        } else {
-            (self.get_inode_lock(linkdirid), self.get_inode_lock(fileid))
-        };
-
-        let _guard1 = lock1.write().await;
-        let _guard2 = lock2.write().await;
+        // Use lock manager to acquire locks in proper order
+        let _guards = self
+            .lock_manager
+            .acquire_multiple_write(vec![fileid, linkdirid])
+            .await;
 
         let link_dir_inode = self.load_inode(linkdirid).await?;
         let creds = Credentials::from_auth_context(auth);

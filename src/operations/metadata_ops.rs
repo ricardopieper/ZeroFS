@@ -1,17 +1,17 @@
 use nfsserve::nfs::{
-    fattr3, fileid3, ftype3, nfsstat3, sattr3, set_atime, set_gid3, set_mode3, set_mtime, 
+    fattr3, fileid3, ftype3, nfsstat3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
     set_size3, set_uid3,
 };
 use nfsserve::vfs::AuthContext;
 use slatedb::{WriteBatch, config::WriteOptions};
 use tracing::debug;
 
+use super::common::validate_filename;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time, get_umask};
 use crate::inode::{Inode, SpecialInode};
 use crate::permissions::{
     AccessMode, Credentials, can_set_times, check_access, check_ownership, validate_mode,
 };
-use super::common::validate_filename;
 
 impl SlateDbFs {
     pub async fn process_setattr(
@@ -21,8 +21,7 @@ impl SlateDbFs {
         setattr: sattr3,
     ) -> Result<fattr3, nfsstat3> {
         debug!("process_setattr: id={}, setattr={:?}", id, setattr);
-        let lock = self.get_inode_lock(id);
-        let _guard = lock.write().await;
+        let _guard = self.lock_manager.acquire_write(id).await;
         let mut inode = self.load_inode(id).await?;
 
         let creds = Credentials::from_auth_context(auth);
@@ -511,8 +510,7 @@ impl SlateDbFs {
             dirid, filename_str, ftype
         );
 
-        let lock = self.get_inode_lock(dirid);
-        let _guard = lock.write().await;
+        let _guard = self.lock_manager.acquire_write(dirid).await;
         let mut dir_inode = self.load_inode(dirid).await?;
 
         let creds = Credentials::from_auth_context(auth);

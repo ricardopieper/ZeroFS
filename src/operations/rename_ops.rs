@@ -3,12 +3,10 @@ use nfsserve::vfs::AuthContext;
 use slatedb::{WriteBatch, config::WriteOptions};
 use tracing::debug;
 
+use super::common::validate_filename;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::Inode;
-use crate::permissions::{
-    AccessMode, Credentials, check_access, check_sticky_bit_delete,
-};
-use super::common::validate_filename;
+use crate::permissions::{AccessMode, Credentials, check_access, check_sticky_bit_delete};
 
 impl SlateDbFs {
     pub async fn process_rename(
@@ -48,23 +46,16 @@ impl SlateDbFs {
 
         let creds = Credentials::from_auth_context(auth);
 
-        // First, we need to lock the directories to safely look up the entries
-        // Lock directories in consistent order
-        let mut dir_locks_to_acquire = vec![from_dirid];
-        if from_dirid != to_dirid {
-            dir_locks_to_acquire.push(to_dirid);
-        }
-        dir_locks_to_acquire.sort();
+        let dir_locks_to_acquire = if from_dirid != to_dirid {
+            vec![from_dirid, to_dirid]
+        } else {
+            vec![from_dirid]
+        };
 
-        let dir_locks: Vec<_> = dir_locks_to_acquire
-            .iter()
-            .map(|&id| self.get_inode_lock(id))
-            .collect();
-
-        let mut _dir_guards = Vec::new();
-        for lock in &dir_locks {
-            _dir_guards.push(lock.write().await);
-        }
+        let _dir_guards = self
+            .lock_manager
+            .acquire_multiple_write(dir_locks_to_acquire)
+            .await;
 
         // Now that directories are locked, safely look up the entries
         let from_entry_key = Self::dir_entry_key(from_dirid, &from_name);
@@ -100,33 +91,21 @@ impl SlateDbFs {
         };
 
         // Now determine all inodes we need to lock (including the files)
-        let mut all_inodes_to_lock = vec![from_dirid];
+        let mut all_inodes_to_lock = vec![from_dirid, source_inode_id];
         if from_dirid != to_dirid {
             all_inodes_to_lock.push(to_dirid);
         }
-        all_inodes_to_lock.push(source_inode_id);
         if let Some(target_id) = target_inode_id {
-            if !all_inodes_to_lock.contains(&target_id) {
-                all_inodes_to_lock.push(target_id);
-            }
+            all_inodes_to_lock.push(target_id);
         }
-
-        // Sort all inodes and remove duplicates
-        all_inodes_to_lock.sort();
-        all_inodes_to_lock.dedup();
 
         // Release directory locks and acquire all locks in order
         drop(_dir_guards);
 
-        let all_locks: Vec<_> = all_inodes_to_lock
-            .iter()
-            .map(|&id| self.get_inode_lock(id))
-            .collect();
-
-        let mut _guards = Vec::new();
-        for lock in &all_locks {
-            _guards.push(lock.write().await);
-        }
+        let _guards = self
+            .lock_manager
+            .acquire_multiple_write(all_inodes_to_lock)
+            .await;
 
         // Re-verify the source still exists after acquiring all locks
         let entry_data = self

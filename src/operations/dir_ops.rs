@@ -1,18 +1,17 @@
 use futures::stream::{self, StreamExt};
 use nfsserve::nfs::{
-    fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime, set_uid3,
+    fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
+    set_uid3,
 };
 use nfsserve::vfs::{AuthContext, DirEntry, ReadDirResult};
 use slatedb::{WriteBatch, config::WriteOptions};
 use std::sync::atomic::Ordering;
 use tracing::debug;
 
+use super::common::validate_filename;
 use crate::filesystem::{SlateDbFs, get_current_time, get_umask};
 use crate::inode::{DirectoryInode, Inode};
-use crate::permissions::{
-    AccessMode, Credentials, check_access,
-};
-use super::common::validate_filename;
+use crate::permissions::{AccessMode, Credentials, check_access};
 
 impl SlateDbFs {
     pub async fn process_mkdir(
@@ -27,8 +26,7 @@ impl SlateDbFs {
         let dirname_str = String::from_utf8_lossy(dirname);
         debug!("process_mkdir: dirid={}, dirname={}", dirid, dirname_str);
 
-        let lock = self.get_inode_lock(dirid);
-        let _guard = lock.write().await;
+        let _guard = self.lock_manager.acquire_write(dirid).await;
         let mut dir_inode = self.load_inode(dirid).await?;
 
         let creds = Credentials::from_auth_context(auth);
@@ -185,8 +183,7 @@ impl SlateDbFs {
             dirid, start_after, max_entries
         );
 
-        let lock = self.get_inode_lock(dirid);
-        let _guard = lock.read().await;
+        let _guard = self.lock_manager.acquire_read(dirid).await;
 
         let dir_inode = self.load_inode(dirid).await?;
 

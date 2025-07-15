@@ -1,5 +1,6 @@
 mod filesystem;
 mod inode;
+mod lock_manager;
 mod operations;
 mod permissions;
 

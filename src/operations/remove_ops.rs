@@ -2,12 +2,10 @@ use nfsserve::nfs::{fileid3, nfsstat3};
 use nfsserve::vfs::AuthContext;
 use slatedb::{WriteBatch, config::WriteOptions};
 
+use super::common::validate_filename;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::Inode;
-use crate::permissions::{
-    AccessMode, Credentials, check_access, check_sticky_bit_delete,
-};
-use super::common::validate_filename;
+use crate::permissions::{AccessMode, Credentials, check_access, check_sticky_bit_delete};
 
 impl SlateDbFs {
     pub async fn process_remove(
@@ -21,8 +19,7 @@ impl SlateDbFs {
         let name = String::from_utf8_lossy(filename).to_string();
         let creds = Credentials::from_auth_context(auth);
 
-        let dir_lock = self.get_inode_lock(dirid);
-        let _dir_guard = dir_lock.write().await;
+        let _dir_guard = self.lock_manager.acquire_write(dirid).await;
 
         let dir_inode = self.load_inode(dirid).await?;
         check_access(&dir_inode, &creds, AccessMode::Write)?;
@@ -47,19 +44,11 @@ impl SlateDbFs {
 
         drop(_dir_guard);
 
-        let mut inodes_to_lock = vec![dirid, file_id];
-        inodes_to_lock.sort();
-        inodes_to_lock.dedup(); // In case dirid == file_id somehow
-
-        let locks: Vec<_> = inodes_to_lock
-            .iter()
-            .map(|&id| self.get_inode_lock(id))
-            .collect();
-
-        let mut _guards = Vec::new();
-        for lock in &locks {
-            _guards.push(lock.write().await);
-        }
+        // Use lock manager to acquire locks in proper order
+        let _multi_guard = self
+            .lock_manager
+            .acquire_multiple_write(vec![dirid, file_id])
+            .await;
 
         // Re-verify the entry still exists after acquiring locks
         let entry_data = self
