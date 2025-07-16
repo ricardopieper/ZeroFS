@@ -58,6 +58,9 @@ With FUSE, we'd need to write both the filesystem implementation and a custom cl
 
 For developers, this means you can mount ZeroFS using standard OS tools, monitor it with existing infrastructure, and debug issues with familiar utilities. It just works.
 
+## Compatibility
+
+ZeroFS passes all tests in the [pjdfstest_nfs](https://github.com/Barre/pjdfstest_nfs) test suite - 8,662 tests covering POSIX filesystem operations including file operations, permissions, ownership, and more.
 
 ## Key Differences from S3FS
 
