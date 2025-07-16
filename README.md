@@ -1,6 +1,14 @@
 # ZeroFS - The S3FS That Doesn't Suck
+## File systems AND block devices on S3 storage
 
-ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://github.com/slatedb/slatedb), it's fast enough to compile code on and works with the NFS client already built into your OS. No FUSE drivers, no kernel modules, just mount and go.
+ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://github.com/slatedb/slatedb), it provides both **file-level access via NFS** and **block-level access via NBD**. Fast enough to compile code on, with clients already built into your OS. No FUSE drivers, no kernel modules, just mount and go.
+
+**Key Features:**
+- **NFS Server** - Mount as a network filesystem on any OS
+- **NBD Server** - Access as raw block devices for ZFS, databases, or any filesystem  
+- **Always Encrypted** - ChaCha20-Poly1305 encryption with compression
+- **High Performance** - Multi-layered caching with microsecond latencies
+- **S3 Compatible** - Works with any S3-compatible storage
 
 ## Testing
 
@@ -10,9 +18,9 @@ We use ZFS as an end-to-end test in our CI. [We create ZFS pools on ZeroFS](http
 
 ## Demo
 
-### ZFS on S3
+### ZFS on S3 via NBD
 
-Plot twist: ZeroFS can host ZFS on S3. We're as surprised as you are. 
+ZeroFS provides NBD block devices that ZFS can use directly - no intermediate filesystem needed. Here's ZFS running on S3 storage: 
 
 <a href="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF" target="_blank"><img src="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF.svg" /></a>
 
@@ -34,6 +42,13 @@ ZeroFS can self-host! Here's a demo showing Rust's toolchain building ZeroFS whi
 
 ## Configuration
 
+ZeroFS supports dual-mode access to the same S3-backed storage:
+
+- **NFS Mode** - Traditional file-level access for general filesystem use
+- **NBD Mode** - Block-level access for ZFS pools, databases, and raw storage applications
+
+Both modes share the same encrypted, compressed, cached storage backend.
+
 ### Required Environment Variables
 
 - `SLATEDB_CACHE_DIR`: Directory path for caching data (required)
@@ -48,6 +63,8 @@ ZeroFS can self-host! Here's a demo showing Rust's toolchain building ZeroFS whi
 - `AWS_SECRET_ACCESS_KEY`: AWS secret access key
 - `AWS_DEFAULT_REGION`: AWS region (default: "us-east-1")
 - `AWS_ALLOW_HTTP`: Allow HTTP connections (default: "false")
+- `ZEROFS_NBD_PORTS`: Comma-separated list of ports for NBD servers (optional)
+- `ZEROFS_NBD_DEVICE_SIZES_GB`: Comma-separated list of device sizes in GB (optional, must match NBD_PORTS count)
 
 ### Encryption
 
@@ -76,7 +93,7 @@ The program will change the password and exit. Then you can use the new password
 #### What's Encrypted vs What's Not
 
 **Encrypted:**
-- All file contents (in 64KB chunks)
+- All file contents (in 128KB chunks)
 - File metadata values (permissions, timestamps, etc.)
 
 **Not Encrypted:**
@@ -99,41 +116,89 @@ mount -t nfs -o nolocks,vers=3,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ mnt
 mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt
 ```
 
+## NBD Configuration and Usage
+
+In addition to NFS, ZeroFS can provide raw block devices through NBD:
+
+```bash
+# Start ZeroFS with both NFS and NBD support
+ZEROFS_ENCRYPTION_PASSWORD='your-password' \
+ZEROFS_NBD_PORTS='10809,10810,10811' \
+ZEROFS_NBD_DEVICE_SIZES_GB='1,2,5' \
+zerofs /path/to/db
+
+# Connect to NBD devices
+nbd-client 127.0.0.1 10809 /dev/nbd0  # 1GB device
+nbd-client 127.0.0.1 10810 /dev/nbd1  # 2GB device  
+nbd-client 127.0.0.1 10811 /dev/nbd2  # 5GB device
+
+# Use the block devices
+mkfs.ext4 /dev/nbd0
+mount /dev/nbd0 /mnt/block
+
+# Or create a ZFS pool
+zpool create mypool /dev/nbd0 /dev/nbd1 /dev/nbd2
+```
+
+### NBD Device Files
+
+NBD devices appear as files in the `.nbd` directory when mounted via NFS:
+- `.nbd/device_10809` - 1GB device accessible on port 10809
+- `.nbd/device_10810` - 2GB device accessible on port 10810  
+- `.nbd/device_10811` - 5GB device accessible on port 10811
+
+You can read/write these files directly through NFS, or access them as block devices through NBD.
+
+**Important**: Once an NBD device is created with a specific size, the size cannot be changed. If you need to resize a device, you must delete the device file first:
+```bash
+# Delete existing device and recreate with new size
+rm /mnt/zerofs/.nbd/device_10809
+# Then restart ZeroFS with the new size
+```
+
 ## Geo-Distributed Storage with ZFS
 
 Since ZeroFS makes S3 regions look like local block devices, you can create globally distributed ZFS pools by running multiple ZeroFS instances across different regions:
 
 ```bash
-# Terminal 1 - US East
-ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=us-east-1 zerofs us-east-db
+# Terminal 1 - US East  
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' \
+AWS_DEFAULT_REGION=us-east-1 \
+ZEROFS_NBD_PORTS='10809' \
+ZEROFS_NBD_DEVICE_SIZES_GB='100' \
+zerofs us-east-db
 
-# Terminal 2 - EU West  
-ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=eu-west-1 zerofs eu-west-db
+# Terminal 2 - EU West
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' \
+AWS_DEFAULT_REGION=eu-west-1 \
+ZEROFS_NBD_PORTS='10810' \
+ZEROFS_NBD_DEVICE_SIZES_GB='100' \
+zerofs eu-west-db
 
-# Terminal 3 - Asia Pacific
-ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=ap-southeast-1 zerofs asia-db
+# Terminal 3 - Asia Pacific  
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' \
+AWS_DEFAULT_REGION=ap-southeast-1 \
+ZEROFS_NBD_PORTS='10811' \
+ZEROFS_NBD_DEVICE_SIZES_GB='100' \
+zerofs asia-db
 ```
 
-Then mount all three and create a geo-distributed ZFS pool:
+Then connect to all three NBD devices and create a geo-distributed ZFS pool:
 
 ```bash
-# Mount each region
-mount -t nfs -o vers=3,nolock,tcp,port=2049 127.0.0.1:/ /mnt/us-east
-mount -t nfs -o vers=3,nolock,tcp,port=2050 127.0.0.2:/ /mnt/eu-west  
-mount -t nfs -o vers=3,nolock,tcp,port=2051 127.0.0.3:/ /mnt/asia
+# Connect to NBD devices from each region
+nbd-client 127.0.0.1 10809 /dev/nbd0 -N device_10809  # US East
+nbd-client 127.0.0.2 10810 /dev/nbd1 -N device_10810  # EU West  
+nbd-client 127.0.0.3 10811 /dev/nbd2 -N device_10811  # Asia Pacific
 
-# Create files to use as vdevs
-touch /mnt/us-east/disk1 /mnt/eu-west/disk2 /mnt/asia/disk3
-
-# Create a mirrored pool across continents
-zpool create global-pool mirror /mnt/us-east/disk1 /mnt/eu-west/disk2 /mnt/asia/disk3
+# Create a mirrored pool across continents using raw block devices
+zpool create global-pool mirror /dev/nbd0 /dev/nbd1 /dev/nbd2
 ```
 
 **Result**: Your ZFS pool now spans three continents with automatic:
 
 - **Disaster recovery** - If any region goes down, your data remains available
 - **Geographic redundancy** - Data is simultaneously stored in multiple regions  
-- **Global performance** - ZFS can read from the closest available copy
 - **Infinite scalability** - Add more regions by spinning up additional ZeroFS instances
 
 This turns expensive geo-distributed storage infrastructure into a few simple commands.
@@ -194,7 +259,7 @@ These microsecond-level latencies are 4-5 orders of magnitude faster than raw S3
 
 **ZeroFS:**
 - Uses SlateDB, a log-structured merge-tree (LSM) database
-- Files are chunked into 64KB blocks for efficient partial reads/writes
+- Files are chunked into 128KB blocks for efficient S3 operations
 - Inodes and file data stored as key-value pairs
 - Metadata is first-class data in the database
 
@@ -228,8 +293,8 @@ s3://bucket/
 Key-Value Store:
 ├── inode:0 → {type: directory, entries: {...}}
 ├── inode:1 → {type: file, size: 1024, ...}
-├── chunk:1/0 → [first 64KB of file data]
-├── chunk:1/1 → [second 64KB of file data]
+├── chunk:1/0 → [first 128KB of file data]
+├── chunk:1/1 → [second 128KB of file data]
 └── next_inode_id → 2
 ```
 

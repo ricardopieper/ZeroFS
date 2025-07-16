@@ -525,7 +525,7 @@ mod tests {
             .await
             .unwrap();
 
-        let chunk_size = 64 * 1024;
+        let chunk_size = 128 * 1024;
         let test_data: Vec<u8> = (0..chunk_size).map(|i| (i % 256) as u8).collect();
 
         fs.write(&test_auth(), file_id, 0, &test_data)

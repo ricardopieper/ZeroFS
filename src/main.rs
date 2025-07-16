@@ -4,6 +4,7 @@ mod filesystem;
 mod inode;
 mod key_management;
 mod lock_manager;
+mod nbd;
 mod operations;
 mod permissions;
 
@@ -15,10 +16,12 @@ mod posix_tests;
 
 use crate::filesystem::{CacheConfig, S3Config, SlateDbFs};
 use crate::inode::Inode;
+use crate::nbd::NBDServer;
 use async_trait::async_trait;
 use nfsserve::nfs::{ftype3, *};
 use nfsserve::tcp::{NFSTcp, NFSTcpListener};
 use nfsserve::vfs::{AuthContext, NFSFileSystem, ReadDirResult, VFSCapabilities};
+use std::sync::Arc;
 use tracing::{debug, info};
 
 #[cfg(not(target_env = "msvc"))]
@@ -417,10 +420,126 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fs = SlateDbFs::new_with_s3(s3_config, cache_config, db_path, encryption_key).await?;
 
-    let listener = NFSTcpListener::bind(&format!("127.0.0.1:{HOSTPORT}"), fs).await?;
+    // Parse NBD device configuration from environment
+    let nbd_ports = std::env::var("ZEROFS_NBD_PORTS").unwrap_or_else(|_| "".to_string());
+    let nbd_device_sizes =
+        std::env::var("ZEROFS_NBD_DEVICE_SIZES_GB").unwrap_or_else(|_| "".to_string());
 
-    info!("NFS server listening on 127.0.0.1:{}", HOSTPORT);
-    listener.handle_forever().await?;
+    let fs_arc = Arc::new(fs);
+
+    // Start NFS server
+    let nfs_fs = Arc::clone(&fs_arc);
+    let nfs_handle = tokio::spawn(async move {
+        let listener =
+            NFSTcpListener::bind(&format!("127.0.0.1:{HOSTPORT}"), (*nfs_fs).clone()).await?;
+        info!("NFS server listening on 127.0.0.1:{}", HOSTPORT);
+        listener.handle_forever().await
+    });
+
+    // Start NBD servers if configured
+    let mut nbd_handles = Vec::new();
+    if !nbd_ports.is_empty() {
+        // Create .nbd directory once before starting any NBD servers
+        {
+            use nfsserve::nfs::{nfsstring, sattr3, set_mode3};
+            use nfsserve::vfs::{AuthContext, NFSFileSystem};
+
+            let auth = AuthContext {
+                uid: 0,
+                gid: 0,
+                gids: vec![],
+            };
+            let nbd_name = nfsstring(b".nbd".to_vec());
+
+            match fs_arc.lookup(&auth, 0, &nbd_name).await {
+                Ok(_) => info!(".nbd directory already exists"),
+                Err(_) => {
+                    let attr = sattr3 {
+                        mode: set_mode3::mode(0o755),
+                        uid: nfsserve::nfs::set_uid3::uid(0),
+                        gid: nfsserve::nfs::set_gid3::gid(0),
+                        size: nfsserve::nfs::set_size3::Void,
+                        atime: nfsserve::nfs::set_atime::DONT_CHANGE,
+                        mtime: nfsserve::nfs::set_mtime::DONT_CHANGE,
+                    };
+                    fs_arc
+                        .mkdir(&auth, 0, &nbd_name, &attr)
+                        .await
+                        .map_err(|e| format!("Failed to create .nbd directory: {:?}", e))?;
+                    info!("Created .nbd directory");
+                }
+            }
+        }
+        let ports: Vec<u16> = nbd_ports
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+
+        let sizes: Vec<u64> = nbd_device_sizes
+            .split(',')
+            .filter_map(|s| s.trim().parse::<f64>().ok())
+            .map(|gb| (gb * 1024.0 * 1024.0 * 1024.0) as u64)
+            .collect();
+
+        if ports.len() != sizes.len() {
+            return Err("ZEROFS_NBD_PORTS and ZEROFS_NBD_DEVICE_SIZES_GB must have the same number of entries".into());
+        }
+
+        for (&port, &size) in ports.iter().zip(sizes.iter()) {
+            let mut nbd_server = NBDServer::new(Arc::clone(&fs_arc), port);
+            nbd_server.add_device(format!("device_{}", port), size);
+
+            info!(
+                "Starting NBD server on port {} with device size {} GB",
+                port,
+                size as f64 / (1024.0 * 1024.0 * 1024.0)
+            );
+
+            let nbd_handle = tokio::spawn(async move {
+                if let Err(e) = nbd_server.start().await {
+                    if e.kind() == std::io::ErrorKind::InvalidInput
+                        && e.to_string().contains("size mismatch")
+                    {
+                        eprintln!("NBD Device Size Error: {}", e);
+                        eprintln!();
+                        eprintln!("To fix this issue:");
+                        eprintln!("   • Use the same device size as before, OR");
+                        eprintln!("   • Delete the existing device file via NFS and restart");
+                        eprintln!("   • Example: rm /mnt/zerofs/.nbd/device_{port}");
+                        std::process::exit(1);
+                    }
+                    Err(e)
+                } else {
+                    Ok(())
+                }
+            });
+            nbd_handles.push(nbd_handle);
+        }
+    }
+
+    // Wait for either NFS or any NBD server to complete (or error)
+    if nbd_handles.is_empty() {
+        nfs_handle.await??;
+    } else {
+        tokio::select! {
+            result = nfs_handle => {
+                result??;
+            }
+            result = futures::future::select_all(nbd_handles) => {
+                match result {
+                    (Ok(Ok(())), _, _) => {
+                        info!("NBD server completed successfully");
+                    }
+                    (Ok(Err(e)), _, _) => {
+                        return Err(e.into());
+                    }
+                    (Err(e), _, _) => {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

@@ -34,7 +34,7 @@ pub fn get_current_time() -> (u64, u32) {
     (now.as_secs(), now.subsec_nanos())
 }
 
-pub const CHUNK_SIZE: usize = 64 * 1024;
+pub const CHUNK_SIZE: usize = 128 * 1024;
 pub const LOCK_SHARD_COUNT: usize = 1024 * 100;
 
 #[derive(Clone)]

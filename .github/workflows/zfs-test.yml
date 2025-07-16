@@ -35,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y nfs-common zfsutils-linux wget
+          sudo apt-get install -y nbd-client zfsutils-linux wget
 
       - name: Setup MinIO bucket
         run: |
@@ -53,7 +53,7 @@ jobs:
           # Create cache directory
           mkdir -p /tmp/zerofs-cache
 
-          # Start ZeroFS in the background
+          # Start ZeroFS with NBD support in the background
           AWS_ENDPOINT_URL=http://localhost:9000 \
           AWS_S3_BUCKET=zerofs-zfs-test \
           AWS_ACCESS_KEY_ID=minioadmin \
@@ -62,50 +62,41 @@ jobs:
           SLATEDB_CACHE_DIR=/tmp/zerofs-cache \
           SLATEDB_CACHE_SIZE_GB=2 \
           ZEROFS_ENCRYPTION_PASSWORD=secret \
+          ZEROFS_NBD_PORTS=10809 \
+          ZEROFS_NBD_DEVICE_SIZES_GB=3 \
           cargo run --release zfs-test &
 
-          # Wait for ZeroFS to start
-          echo "Waiting for ZeroFS to start..."
+          # Wait for ZeroFS NBD server to start
+          echo "Waiting for ZeroFS NBD server to start..."
           for i in {1..30}; do
-            if nc -z 127.0.0.1 2049; then
-              echo "ZeroFS is ready"
+            if nc -z 127.0.0.1 10809; then
+              echo "ZeroFS NBD server is ready"
               break
             fi
             sleep 1
           done
 
-          # Verify ZeroFS is running
-          if ! nc -z 127.0.0.1 2049; then
-            echo "ZeroFS failed to start"
+          # Verify ZeroFS NBD server is running
+          if ! nc -z 127.0.0.1 10809; then
+            echo "ZeroFS NBD server failed to start"
             exit 1
           fi
 
-      - name: Mount NFS
+      - name: Connect NBD device
         run: |
-          # Create mount point
-          sudo mkdir -p /mnt/zerofs
+          # Connect to NBD device
+          echo "Connecting to NBD device..."
+          sudo nbd-client 127.0.0.1 10809 /dev/nbd0 -N device_10809
 
-          # Mount ZeroFS via NFS
-          sudo mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt/zerofs
-
-          # Verify mount
-          mount | grep zerofs
-          df -h /mnt/zerofs
-
-      - name: Create ZFS pool file
-        run: |
-          # Create a 2GB file for ZFS pool
-          echo "Creating 2GB file for ZFS pool..."
-          sudo dd if=/dev/zero of=/mnt/zerofs/zpool.img bs=1M count=2048 status=progress
-
-          # Verify file was created
-          ls -lh /mnt/zerofs/zpool.img
+          # Verify NBD device is available
+          sudo blockdev --getsize64 /dev/nbd0
+          sudo fdisk -l /dev/nbd0
 
       - name: Create ZFS pool
         run: |
-          # Create ZFS pool on the file
-          echo "Creating ZFS pool..."
-          sudo zpool create testpool /mnt/zerofs/zpool.img
+          # Create ZFS pool directly on NBD block device
+          echo "Creating ZFS pool on NBD device..."
+          sudo zpool create testpool /dev/nbd0
 
           # Check pool status
           sudo zpool status testpool
@@ -181,8 +172,8 @@ jobs:
           # Export and destroy ZFS pool
           sudo zpool export testpool || true
 
-          # Unmount
-          sudo umount /mnt/zerofs || true
+          # Disconnect NBD device
+          sudo nbd-client -d /dev/nbd0 || true
 
           # Kill ZeroFS
           pkill -f "cargo run --release zfs-test" || true
