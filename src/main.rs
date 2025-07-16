@@ -1,3 +1,4 @@
+mod cache;
 mod filesystem;
 mod inode;
 mod lock_manager;
@@ -44,6 +45,9 @@ impl NFSFileSystem for SlateDbFs {
         let filename_str = String::from_utf8_lossy(filename);
         debug!("lookup called: dirid={}, filename={}", dirid, filename_str);
 
+        // Acquire read lock on the directory for the entire lookup operation
+        let _guard = self.lock_manager.acquire_read(dirid).await;
+
         let dir_inode = self.load_inode(dirid).await?;
 
         match dir_inode {
@@ -52,6 +56,12 @@ impl NFSFileSystem for SlateDbFs {
                 let creds = Credentials::from_auth_context(auth);
                 check_access(&dir_inode, &creds, AccessMode::Execute)?;
                 let name = filename_str.to_string();
+
+                if let Some(inode_id) = self.dir_entry_cache.get(dirid, &name) {
+                    debug!("lookup cache hit: {} -> inode {}", name, inode_id);
+                    return Ok(inode_id);
+                }
+
                 let entry_key = SlateDbFs::dir_entry_key(dirid, &name);
 
                 match self
@@ -65,6 +75,9 @@ impl NFSFileSystem for SlateDbFs {
                         bytes.copy_from_slice(&entry_data[..8]);
                         let inode_id = u64::from_le_bytes(bytes);
                         debug!("lookup found: {} -> inode {}", name, inode_id);
+
+                        self.dir_entry_cache.insert(dirid, name.clone(), inode_id);
+
                         Ok(inode_id)
                     }
                     None => {
@@ -79,6 +92,8 @@ impl NFSFileSystem for SlateDbFs {
 
     async fn getattr(&self, _auth: &AuthContext, id: fileid3) -> Result<fattr3, nfsstat3> {
         debug!("getattr called: id={}", id);
+        // Acquire read lock for consistent view of metadata
+        let _guard = self.lock_manager.acquire_read(id).await;
         let inode = self.load_inode(id).await?;
         Ok(inode.to_fattr3(id))
     }
@@ -225,6 +240,7 @@ impl NFSFileSystem for SlateDbFs {
     async fn readlink(&self, _auth: &AuthContext, id: fileid3) -> Result<nfspath3, nfsstat3> {
         debug!("readlink called: id={}", id);
 
+        let _guard = self.lock_manager.acquire_read(id).await;
         let inode = self.load_inode(id).await?;
         match inode {
             Inode::Symlink(symlink) => Ok(nfspath3 { 0: symlink.target }),

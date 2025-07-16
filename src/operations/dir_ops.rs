@@ -162,6 +162,8 @@ impl SlateDbFs {
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
+                self.metadata_cache.remove(&dirid);
+
                 Ok((
                     new_dir_id,
                     Inode::Directory(new_dir_inode).to_fattr3(new_dir_id),

@@ -119,6 +119,9 @@ impl SlateDbFs {
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                 debug!("DB write took: {:?}", db_write_start.elapsed());
 
+                self.metadata_cache.remove(&id);
+                self.small_file_cache.remove(&id);
+
                 let elapsed = start_time.elapsed();
                 debug!(
                     "Write processed successfully for inode {}, new size: {}, took: {:?}",
@@ -255,6 +258,8 @@ impl SlateDbFs {
                         nfsstat3::NFS3ERR_IO
                     })?;
 
+                self.metadata_cache.remove(&dirid);
+
                 Ok((file_id, Inode::File(file_inode).to_fattr3(file_id)))
             }
             _ => Err(nfsstat3::NFS3ERR_NOTDIR),
@@ -299,6 +304,17 @@ impl SlateDbFs {
             Inode::File(file) => {
                 if offset >= file.size {
                     return Ok((vec![], true));
+                }
+
+                if file.size <= crate::cache::SMALL_FILE_THRESHOLD_BYTES
+                    && offset == 0
+                    && count as u64 >= file.size
+                {
+                    if let Some(cached_data) = self.small_file_cache.get(&id) {
+                        debug!("Serving file {} from small file cache", id);
+                        let eof = file.size <= count as u64;
+                        return Ok(((*cached_data).clone(), eof));
+                    }
                 }
 
                 let end = std::cmp::min(offset + count as u64, file.size);
@@ -382,6 +398,15 @@ impl SlateDbFs {
                 }
 
                 let eof = end >= file.size;
+
+                if file.size <= crate::cache::SMALL_FILE_THRESHOLD_BYTES
+                    && offset == 0
+                    && end >= file.size
+                {
+                    debug!("Caching small file {} ({} bytes)", id, file.size);
+                    self.small_file_cache.insert(id, result.clone());
+                }
+
                 Ok((result, eof))
             }
             _ => Err(nfsstat3::NFS3ERR_ISDIR),

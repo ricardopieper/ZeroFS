@@ -19,6 +19,7 @@ bincode = "1.3"
 rand = "0.8"
 libc = "0.2"
 futures = "0.3"
+foyer = "0.18"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", features = ["background_threads"] }

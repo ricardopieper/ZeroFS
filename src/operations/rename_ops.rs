@@ -334,6 +334,18 @@ impl SlateDbFs {
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
+        self.metadata_cache.remove(&source_inode_id);
+        if let Some(target_id) = target_inode_id {
+            self.metadata_cache.remove(&target_id);
+            self.small_file_cache.remove(&target_id);
+        }
+        self.metadata_cache.remove(&from_dirid);
+        if from_dirid != to_dirid {
+            self.metadata_cache.remove(&to_dirid);
+        }
+        self.dir_entry_cache.remove(from_dirid, &from_name);
+        self.dir_entry_cache.remove(to_dirid, &to_name);
+
         Ok(())
     }
 }

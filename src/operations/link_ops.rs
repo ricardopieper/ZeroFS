@@ -132,6 +132,8 @@ impl SlateDbFs {
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
+        self.metadata_cache.remove(&dirid);
+
         Ok((new_id, symlink_inode.to_fattr3(new_id)))
     }
 
@@ -243,6 +245,9 @@ impl SlateDbFs {
             )
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+
+        self.metadata_cache.remove(&fileid); // File's metadata changed (nlink, ctime)
+        self.metadata_cache.remove(&linkdirid); // Directory's metadata changed
 
         Ok(())
     }

@@ -169,6 +169,9 @@ impl SlateDbFs {
                             .await
                             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
+                        self.metadata_cache.remove(&id);
+                        self.small_file_cache.remove(&id);
+
                         return Ok(inode.to_fattr3(id));
                     }
                 }
@@ -617,6 +620,8 @@ impl SlateDbFs {
                     )
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+
+                self.metadata_cache.remove(&dirid);
 
                 Ok((special_id, inode.to_fattr3(special_id)))
             }

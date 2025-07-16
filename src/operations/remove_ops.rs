@@ -162,6 +162,11 @@ impl SlateDbFs {
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
+                self.metadata_cache.remove(&file_id);
+                self.metadata_cache.remove(&dirid);
+                self.small_file_cache.remove(&file_id);
+                self.dir_entry_cache.remove(dirid, &name);
+
                 Ok(())
             }
             _ => Err(nfsstat3::NFS3ERR_NOTDIR),

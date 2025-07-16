@@ -1,3 +1,4 @@
+use crate::cache::{DirEntryCache, MetadataCache, SmallFileCache};
 use crate::lock_manager::LockManager;
 use bytes::Bytes;
 use nfsserve::nfs::nfsstat3;
@@ -54,6 +55,9 @@ pub struct SlateDbFs {
     pub db: Arc<Db>,
     pub lock_manager: Arc<LockManager>,
     pub next_inode_id: Arc<AtomicU64>,
+    pub metadata_cache: Arc<MetadataCache>,
+    pub small_file_cache: Arc<SmallFileCache>,
+    pub dir_entry_cache: Arc<DirEntryCache>,
 }
 
 pub struct S3Config {
@@ -159,11 +163,17 @@ impl SlateDbFs {
         }
 
         let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
+        let metadata_cache = Arc::new(MetadataCache::new(10_000)); // 10k metadata entries
+        let small_file_cache = Arc::new(SmallFileCache::new(100 * 1024 * 1024)); // 100MB for small files
+        let dir_entry_cache = Arc::new(DirEntryCache::new(50_000)); // 50k directory entries
 
         let fs = Self {
             db: db.clone(),
             lock_manager,
             next_inode_id: Arc::new(AtomicU64::new(next_inode_id)),
+            metadata_cache,
+            small_file_cache,
+            dir_entry_cache,
         };
 
         Ok(fs)
@@ -202,6 +212,10 @@ impl SlateDbFs {
     }
 
     pub async fn load_inode(&self, inode_id: InodeId) -> Result<Inode, nfsstat3> {
+        if let Some(cached_inode) = self.metadata_cache.get(&inode_id) {
+            return Ok((*cached_inode).clone());
+        }
+
         let key = Self::inode_key(inode_id);
         let data = self
             .db
@@ -211,6 +225,9 @@ impl SlateDbFs {
             .ok_or(nfsstat3::NFS3ERR_NOENT)?;
 
         let inode: Inode = bincode::deserialize(&data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+
+        self.metadata_cache
+            .insert(inode_id, Arc::new(inode.clone()));
 
         Ok(inode)
     }
@@ -230,6 +247,14 @@ impl SlateDbFs {
             )
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+
+        self.metadata_cache.remove(&inode_id);
+
+        if let Inode::File(file) = inode {
+            if file.size <= crate::cache::SMALL_FILE_THRESHOLD_BYTES {
+                self.small_file_cache.remove(&inode_id);
+            }
+        }
 
         Ok(())
     }
@@ -294,11 +319,17 @@ impl SlateDbFs {
         }
 
         let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
+        let metadata_cache = Arc::new(MetadataCache::new(10_000)); // 10k metadata entries
+        let small_file_cache = Arc::new(SmallFileCache::new(100 * 1024 * 1024)); // 100MB for small files
+        let dir_entry_cache = Arc::new(DirEntryCache::new(50_000)); // 50k directory entries
 
         let fs = Self {
             db: db.clone(),
             lock_manager,
             next_inode_id: Arc::new(AtomicU64::new(next_inode_id)),
+            metadata_cache,
+            small_file_cache,
+            dir_entry_cache,
         };
 
         Ok(fs)
