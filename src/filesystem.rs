@@ -85,7 +85,7 @@ impl SlateDbFs {
         if !s3_config.access_key_id.is_empty() {
             builder = builder.with_access_key_id(&s3_config.access_key_id);
         }
-        
+
         if !s3_config.secret_access_key.is_empty() {
             builder = builder.with_secret_access_key(s3_config.secret_access_key);
         }
