@@ -26,7 +26,6 @@ fn get_current_uid_gid() -> (u32, u32) {
     (0, 0)
 }
 
-
 pub fn get_current_time() -> (u64, u32) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

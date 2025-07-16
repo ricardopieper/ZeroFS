@@ -133,6 +133,24 @@ impl SlateDbFs {
 
         check_sticky_bit_delete(&from_dir, &source_inode, &creds)?;
 
+        // Additional check for moving directories across parents in sticky directories
+        // When a directory is moved to a different parent, its ".." entry must be updated,
+        // which requires ownership of the directory being moved
+        if from_dirid != to_dirid && matches!(source_inode, Inode::Directory(_)) {
+            if let Inode::Directory(from_dir_data) = &from_dir {
+                if from_dir_data.mode & 0o1000 != 0 {
+                    // Sticky bit set
+                    let source_uid = match &source_inode {
+                        Inode::Directory(d) => d.uid,
+                        _ => unreachable!(),
+                    };
+                    if creds.uid != 0 && creds.uid != source_uid {
+                        return Err(nfsstat3::NFS3ERR_PERM);
+                    }
+                }
+            }
+        }
+
         // Check if target directory is non-empty (if it exists and is a directory)
         if let Some(target_id) = target_inode_id {
             let target_inode = self.load_inode(target_id).await?;
