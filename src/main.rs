@@ -1,6 +1,8 @@
 mod cache;
+mod encryption;
 mod filesystem;
 mod inode;
+mod key_management;
 mod lock_manager;
 mod operations;
 mod permissions;
@@ -66,7 +68,7 @@ impl NFSFileSystem for SlateDbFs {
 
                 match self
                     .db
-                    .get(&entry_key)
+                    .get_bytes(&entry_key)
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?
                 {
@@ -297,7 +299,10 @@ const HOSTPORT: u32 = 2049;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use tracing_subscriber::EnvFilter;
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Default: info for zerofs, error for slatedb to reduce noise
+        EnvFilter::new("error,zerofs=info")
+    });
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -342,7 +347,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Cache Directory: {}", cache_config.root_folder);
     info!("Cache Size: {} GB", cache_config.max_cache_size_gb);
 
-    let fs = SlateDbFs::new_with_s3(s3_config, cache_config, db_path).await?;
+    let password = match std::env::var("ZEROFS_ENCRYPTION_PASSWORD") {
+        Ok(pwd) => pwd,
+        Err(_) => {
+            eprintln!("Error: ZEROFS_ENCRYPTION_PASSWORD environment variable is required");
+            eprintln!("");
+            eprintln!("Usage:");
+            eprintln!("  ZEROFS_ENCRYPTION_PASSWORD='your-password' zerofs <path>");
+            eprintln!("");
+            eprintln!("To change password:");
+            eprintln!(
+                "  ZEROFS_ENCRYPTION_PASSWORD='current-password' ZEROFS_NEW_PASSWORD='new-password' zerofs <path>"
+            );
+            std::process::exit(1);
+        }
+    };
+
+    info!("Loading or initializing encryption key");
+
+    let temp_fs = SlateDbFs::dangerous_new_with_s3_unencrypted_for_key_management_only(
+        s3_config.clone(),
+        cache_config.clone(),
+        db_path.clone(),
+    )
+    .await?;
+
+    if let Ok(new_password) = std::env::var("ZEROFS_NEW_PASSWORD") {
+        info!("Password change requested - changing encryption password");
+
+        match key_management::change_encryption_password(&temp_fs.db, &password, &new_password)
+            .await
+        {
+            Ok(()) => {
+                info!("✓ Encryption password changed successfully!");
+                info!("");
+                info!("IMPORTANT: Please restart the program with:");
+                info!("  - ZEROFS_ENCRYPTION_PASSWORD set to your new password");
+                info!("  - ZEROFS_NEW_PASSWORD environment variable removed");
+                info!("");
+                info!("Example:");
+                info!("  unset ZEROFS_NEW_PASSWORD");
+                info!(
+                    "  ZEROFS_ENCRYPTION_PASSWORD='{}' zerofs {}",
+                    new_password, db_path
+                );
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("✗ Failed to change encryption password: {}", e);
+                eprintln!(
+                    "  This usually means the database was not initialized yet: cannot change a password that does not exists."
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let encryption_key =
+        key_management::load_or_init_encryption_key(&temp_fs.db, &password).await?;
+
+    // Flush and properly close the temporary database to avoid fencing issues
+    temp_fs.db.flush().await?;
+    // Give background tasks a moment to complete after flush
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    temp_fs.db.close().await?;
+    drop(temp_fs);
+
+    info!("Encryption key loaded successfully");
+
+    let fs = SlateDbFs::new_with_s3(s3_config, cache_config, db_path, encryption_key).await?;
 
     let listener = NFSTcpListener::bind(&format!("127.0.0.1:{HOSTPORT}"), fs).await?;
 
