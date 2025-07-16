@@ -40,6 +40,10 @@ ZeroFS can self-host! Here's a demo showing Rust's toolchain building ZeroFS whi
 - `AWS_DEFAULT_REGION`: AWS region (default: "us-east-1")
 - `AWS_ALLOW_HTTP`: Allow HTTP connections (default: "false")
 
+### Using IMDS
+
+If you have an IAM role attached to your instance, and you want to use it instead of passing the access key ID and secret key, just leave the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY variables empty.
+
 ## Mounting the Filesystem
 
 ### macOS
@@ -164,4 +168,3 @@ Key-Value Store:
 ## Future Enhancements
 
 - [ ] Snapshot capabilities using SlateDB's checkpoints
-
