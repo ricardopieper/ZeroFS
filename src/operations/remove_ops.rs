@@ -106,6 +106,8 @@ impl SlateDbFs {
                         // Delete the directory inode
                         let inode_key = Self::inode_key(file_id);
                         batch.delete(inode_key);
+                        // Decrement parent's nlink since we're removing a subdirectory
+                        dir.nlink = dir.nlink.saturating_sub(1);
                     }
                     Inode::Symlink(_) => {
                         // Delete the symlink inode
