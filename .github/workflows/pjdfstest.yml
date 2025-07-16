@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Start MinIO
         run: |
           docker run -d \
@@ -22,7 +22,7 @@ jobs:
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
             minio/minio server /data
-          
+
           # Wait for MinIO to be ready
           for i in {1..30}; do
             if curl -f http://localhost:9000/minio/health/live; then
@@ -31,23 +31,23 @@ jobs:
             fi
             sleep 1
           done
-      
+
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y nfs-common build-essential autoconf automake libtool git perl
-          
+
       - name: Clone pjdfstest_nfs
         run: |
           git clone https://github.com/Barre/pjdfstest_nfs.git /tmp/pjdfstest_nfs
-          
+
       - name: Build pjdfstest
         working-directory: /tmp/pjdfstest_nfs
         run: |
           autoreconf -fvi
           ./configure
           make
-          
+
       - name: Setup MinIO bucket
         run: |
           # Install mc (MinIO client)
@@ -55,15 +55,15 @@ jobs:
           chmod +x mc
           ./mc alias set myminio http://localhost:9000 minioadmin minioadmin
           ./mc mb myminio/zerofs-test || true
-          
+
       - name: Build ZeroFS
         run: cargo build --release
-        
+
       - name: Start ZeroFS
         run: |
           # Create cache directory
           mkdir -p /tmp/zerofs-cache
-          
+
           # Start ZeroFS in the background
           AWS_ENDPOINT_URL=http://localhost:9000 \
           AWS_S3_BUCKET=zerofs-test \
@@ -72,8 +72,9 @@ jobs:
           AWS_ALLOW_HTTP=true \
           SLATEDB_CACHE_DIR=/tmp/zerofs-cache \
           SLATEDB_CACHE_SIZE_GB=1 \
+          ZEROFS_ENCRYPTION_PASSWORD=secret \
           cargo run --release test &
-          
+
           # Wait for ZeroFS to start
           echo "Waiting for ZeroFS to start..."
           for i in {1..30}; do
@@ -83,35 +84,35 @@ jobs:
             fi
             sleep 1
           done
-          
+
           # Verify ZeroFS is running
           if ! nc -z 127.0.0.1 2049; then
             echo "ZeroFS failed to start"
             exit 1
           fi
-          
+
       - name: Mount NFS
         run: |
           # Create mount point
           sudo mkdir -p /mnt/zerofs
-          
+
           # Mount ZeroFS via NFS
           sudo mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt/zerofs
-          
+
           # Verify mount
           mount | grep zerofs
-          
+
       - name: Run pjdfstest
         working-directory: /mnt/zerofs
         run: |
           # Run the test suite
           sudo prove -rv /tmp/pjdfstest_nfs/tests/
-          
+
       - name: Cleanup
         if: always()
         run: |
           # Unmount
           sudo umount /mnt/zerofs || true
-          
+
           # Kill ZeroFS
           pkill -f "cargo run --release test" || true
