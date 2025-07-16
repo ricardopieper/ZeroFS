@@ -614,6 +614,8 @@ impl SlateDbFs {
                 let (now_sec, now_nsec) = get_current_time();
                 dir.mtime = now_sec;
                 dir.mtime_nsec = now_nsec;
+                dir.ctime = now_sec;
+                dir.ctime_nsec = now_nsec;
 
                 let dir_inode_key = Self::inode_key(dirid);
                 let dir_inode_data =
