@@ -1,4 +1,5 @@
 use crate::cache::{DirEntryCache, MetadataCache, SmallFileCache};
+use crate::encryption::{EncryptedDb, EncryptionManager};
 use crate::lock_manager::LockManager;
 use bytes::Bytes;
 use nfsserve::nfs::nfsstat3;
@@ -7,7 +8,7 @@ use slatedb::config::ObjectStoreCacheOptions;
 use slatedb::db_cache::foyer::{FoyerCache, FoyerCacheOptions};
 use slatedb::object_store::{ObjectStore, path::Path};
 use slatedb::{
-    Db, DbBuilder,
+    DbBuilder,
     config::{PutOptions, WriteOptions},
 };
 use std::sync::Arc;
@@ -38,7 +39,7 @@ pub const LOCK_SHARD_COUNT: usize = 1024 * 100;
 
 #[derive(Clone)]
 pub struct SlateDbFs {
-    pub db: Arc<Db>,
+    pub db: Arc<EncryptedDb>,
     pub lock_manager: Arc<LockManager>,
     pub next_inode_id: Arc<AtomicU64>,
     pub metadata_cache: Arc<MetadataCache>,
@@ -46,6 +47,13 @@ pub struct SlateDbFs {
     pub dir_entry_cache: Arc<DirEntryCache>,
 }
 
+// Struct for temporary unencrypted access (only for key management)
+// Only use for initial key setup and password changes
+pub struct DangerousUnencryptedSlateDbFs {
+    pub db: Arc<slatedb::Db>,
+}
+
+#[derive(Clone)]
 pub struct S3Config {
     pub endpoint: String,
     pub bucket_name: String,
@@ -55,6 +63,7 @@ pub struct S3Config {
     pub allow_http: bool,
 }
 
+#[derive(Clone)]
 pub struct CacheConfig {
     pub root_folder: String,
     pub max_cache_size_gb: f64,
@@ -65,6 +74,7 @@ impl SlateDbFs {
         s3_config: S3Config,
         cache_config: CacheConfig,
         db_path: String,
+        encryption_key: [u8; 32],
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut builder = AmazonS3Builder::new()
             .with_bucket_name(&s3_config.bucket_name)
@@ -99,15 +109,16 @@ impl SlateDbFs {
                 max_concurrent_compactions: 16,
                 ..Default::default()
             }),
+            compression_codec: None, // Disable compression - we handle it in encryption layer
             ..Default::default()
         };
 
         let cache = Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-            max_capacity: 10_000,
+            max_capacity: 10_000u64,
         }));
 
         let db_path = Path::from(db_path);
-        let db: Arc<Db> = Arc::new(
+        let slatedb = Arc::new(
             DbBuilder::new(db_path, object_store)
                 .with_settings(settings)
                 .with_block_cache(cache)
@@ -115,8 +126,11 @@ impl SlateDbFs {
                 .await?,
         );
 
+        let encryptor = Arc::new(EncryptionManager::new(&encryption_key));
+        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor));
+
         let counter_key = Self::counter_key();
-        let next_inode_id = match db.get(&counter_key).await? {
+        let next_inode_id = match db.get_bytes(&counter_key).await? {
             Some(data) => {
                 let bytes: [u8; 8] = data[..8].try_into().map_err(|_| "Invalid counter data")?;
                 u64::from_le_bytes(bytes)
@@ -125,7 +139,7 @@ impl SlateDbFs {
         };
 
         let root_inode_key = Self::inode_key(0);
-        if db.get(&root_inode_key).await?.is_none() {
+        if db.get_bytes(&root_inode_key).await?.is_none() {
             let (uid, gid) = get_current_uid_gid();
             let (now_sec, now_nsec) = get_current_time();
             let root_dir = DirectoryInode {
@@ -210,7 +224,7 @@ impl SlateDbFs {
         let key = Self::inode_key(inode_id);
         let data = self
             .db
-            .get(&key)
+            .get_bytes(&key)
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?
             .ok_or(nfsstat3::NFS3ERR_NOENT)?;
@@ -252,11 +266,20 @@ impl SlateDbFs {
 
     #[cfg(test)]
     pub async fn new_in_memory() -> Result<Self, Box<dyn std::error::Error>> {
+        // Use a fixed test key for in-memory tests
+        let test_key = [0u8; 32];
+        Self::new_in_memory_with_encryption(test_key).await
+    }
+
+    #[cfg(test)]
+    pub async fn new_in_memory_with_encryption(
+        encryption_key: [u8; 32],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let object_store = slatedb::object_store::memory::InMemory::new();
         let object_store: Arc<dyn ObjectStore> = Arc::new(object_store);
 
         let settings = slatedb::config::Settings {
-            compression_codec: Some(slatedb::config::CompressionCodec::Lz4),
+            compression_codec: None, // Disable compression - we handle it in encryption layer
             compactor_options: Some(slatedb::config::CompactorOptions {
                 max_concurrent_compactions: 32,
                 ..Default::default()
@@ -269,7 +292,7 @@ impl SlateDbFs {
         }));
 
         let db_path = Path::from("test_slatedb");
-        let db: Arc<Db> = Arc::new(
+        let slatedb = Arc::new(
             DbBuilder::new(db_path, object_store)
                 .with_settings(settings)
                 .with_block_cache(cache)
@@ -277,10 +300,13 @@ impl SlateDbFs {
                 .await?,
         );
 
+        let encryptor = Arc::new(EncryptionManager::new(&encryption_key));
+        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor));
+
         let next_inode_id = 1;
 
         let root_inode_key = Self::inode_key(0);
-        if db.get(&root_inode_key).await?.is_none() {
+        if db.get_bytes(&root_inode_key).await?.is_none() {
             let (uid, gid) = get_current_uid_gid();
             let (now_sec, now_nsec) = get_current_time();
             let root_dir = DirectoryInode {
@@ -324,6 +350,60 @@ impl SlateDbFs {
         };
 
         Ok(fs)
+    }
+}
+
+impl SlateDbFs {
+    /// DANGEROUS: Creates an unencrypted database connection. Only use for key management!
+    pub async fn dangerous_new_with_s3_unencrypted_for_key_management_only(
+        s3_config: S3Config,
+        cache_config: CacheConfig,
+        db_path: String,
+    ) -> Result<DangerousUnencryptedSlateDbFs, Box<dyn std::error::Error>> {
+        let mut builder = AmazonS3Builder::new()
+            .with_bucket_name(&s3_config.bucket_name)
+            .with_region(&s3_config.region)
+            .with_access_key_id(&s3_config.access_key_id)
+            .with_secret_access_key(&s3_config.secret_access_key)
+            .with_allow_http(s3_config.allow_http)
+            .with_conditional_put(S3ConditionalPut::ETagMatch);
+
+        if !s3_config.endpoint.is_empty() {
+            builder = builder.with_endpoint(&s3_config.endpoint);
+        }
+
+        let object_store = builder.build()?;
+        let object_store: Arc<dyn ObjectStore> = Arc::new(object_store);
+
+        let cache_size_bytes = (cache_config.max_cache_size_gb * 1_000_000_000.0) as usize;
+
+        let settings = slatedb::config::Settings {
+            object_store_cache_options: ObjectStoreCacheOptions {
+                root_folder: Some(cache_config.root_folder.into()),
+                max_cache_size_bytes: Some(cache_size_bytes),
+                ..Default::default()
+            },
+            compactor_options: Some(slatedb::config::CompactorOptions {
+                max_concurrent_compactions: 16,
+                ..Default::default()
+            }),
+            compression_codec: None, // Disable compression - we handle it in encryption layer
+            ..Default::default()
+        };
+
+        let cache = Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
+            max_capacity: cache_size_bytes as u64,
+        }));
+
+        let slatedb = Arc::new(
+            DbBuilder::new(Path::from(db_path), object_store)
+                .with_settings(settings)
+                .with_block_cache(cache)
+                .build()
+                .await?,
+        );
+
+        Ok(DangerousUnencryptedSlateDbFs { db: slatedb })
     }
 }
 

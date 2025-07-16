@@ -1,7 +1,7 @@
 use futures::stream::{self, StreamExt};
 use nfsserve::nfs::{fattr3, fileid3, nfsstat3, sattr3, set_gid3, set_mode3, set_uid3};
 use nfsserve::vfs::AuthContext;
-use slatedb::{WriteBatch, config::WriteOptions};
+use slatedb::config::WriteOptions;
 use std::sync::atomic::Ordering;
 use tracing::{debug, error};
 
@@ -43,7 +43,7 @@ impl SlateDbFs {
                 let start_chunk = (offset / CHUNK_SIZE as u64) as usize;
                 let end_chunk = ((end_offset - 1) / CHUNK_SIZE as u64) as usize;
 
-                let mut batch = WriteBatch::new();
+                let mut batch = self.db.new_write_batch();
 
                 let chunk_processing_start = std::time::Instant::now();
                 for chunk_idx in start_chunk..=end_chunk {
@@ -68,7 +68,7 @@ impl SlateDbFs {
                     if write_start > 0 || write_end < CHUNK_SIZE {
                         if let Some(existing_data) = self
                             .db
-                            .get(&chunk_key)
+                            .get_bytes(&chunk_key)
                             .await
                             .map_err(|_| nfsstat3::NFS3ERR_IO)?
                         {
@@ -85,7 +85,9 @@ impl SlateDbFs {
 
                     let chunk_data_to_store =
                         &chunk_data[..std::cmp::min(CHUNK_SIZE, (new_size - chunk_start) as usize)];
-                    batch.put(chunk_key, chunk_data_to_store);
+                    batch
+                        .put_bytes(&chunk_key, chunk_data_to_store)
+                        .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                 }
 
                 debug!(
@@ -105,7 +107,9 @@ impl SlateDbFs {
 
                 let inode_key = Self::inode_key(id);
                 let inode_data = bincode::serialize(&inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(inode_key, &inode_data);
+                batch
+                    .put_bytes(&inode_key, &inode_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let db_write_start = std::time::Instant::now();
                 self.db
@@ -171,7 +175,7 @@ impl SlateDbFs {
                 let entry_key = Self::dir_entry_key(dirid, &name);
                 if self
                     .db
-                    .get(&entry_key)
+                    .get_bytes(&entry_key)
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?
                     .is_some()
@@ -214,17 +218,23 @@ impl SlateDbFs {
                     nlink: 1,
                 };
 
-                let mut batch = WriteBatch::new();
+                let mut batch = self.db.new_write_batch();
 
                 let file_inode_key = Self::inode_key(file_id);
                 let file_inode_data = bincode::serialize(&Inode::File(file_inode.clone()))
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(file_inode_key, &file_inode_data);
+                batch
+                    .put_bytes(&file_inode_key, &file_inode_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                batch.put(entry_key, file_id.to_le_bytes());
+                batch
+                    .put_bytes(&entry_key, &file_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let scan_key = Self::dir_scan_key(dirid, file_id, &name);
-                batch.put(scan_key, file_id.to_le_bytes());
+                batch
+                    .put_bytes(&scan_key, &file_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 dir.entry_count += 1;
                 let (now_sec, now_nsec) = get_current_time();
@@ -236,11 +246,15 @@ impl SlateDbFs {
                 // Persist the counter
                 let counter_key = Self::counter_key();
                 let next_id = self.next_inode_id.load(Ordering::SeqCst);
-                batch.put(counter_key, next_id.to_le_bytes());
+                batch
+                    .put_bytes(&counter_key, &next_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let dir_key = Self::inode_key(dirid);
                 let dir_data = bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(dir_key, &dir_data);
+                batch
+                    .put_bytes(&dir_key, &dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 self.db
                     .write_with_options(
@@ -325,7 +339,7 @@ impl SlateDbFs {
                     let key = Self::chunk_key_by_index(id, chunk_idx);
                     async move {
                         let chunk_data_opt =
-                            db.get(&key).await.map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                            db.get_bytes(&key).await.map_err(|_| nfsstat3::NFS3ERR_IO)?;
                         let chunk_vec_opt = chunk_data_opt.map(|bytes| bytes.to_vec());
                         Ok::<(usize, Option<Vec<u8>>), nfsstat3>((chunk_idx, chunk_vec_opt))
                     }

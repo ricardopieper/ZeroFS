@@ -43,7 +43,7 @@ mod tests {
 
         // Check that the file was added to the directory
         let entry_key = SlateDbFs::dir_entry_key(0, "test.txt");
-        let entry_data = fs.db.get(&entry_key).await.unwrap().unwrap();
+        let entry_data = fs.db.get_bytes(&entry_key).await.unwrap().unwrap();
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&entry_data[..8]);
         let stored_id = u64::from_le_bytes(bytes);
@@ -227,7 +227,7 @@ mod tests {
 
         // Check that the file was removed from the directory
         let entry_key = SlateDbFs::dir_entry_key(0, "test.txt");
-        let entry_data = fs.db.get(&entry_key).await.unwrap();
+        let entry_data = fs.db.get_bytes(&entry_key).await.unwrap();
         assert!(entry_data.is_none());
 
         let result = fs.load_inode(file_id).await;
@@ -283,10 +283,10 @@ mod tests {
 
         // Check old entry is gone and new entry exists
         let old_entry_key = SlateDbFs::dir_entry_key(0, "old.txt");
-        assert!(fs.db.get(&old_entry_key).await.unwrap().is_none());
+        assert!(fs.db.get_bytes(&old_entry_key).await.unwrap().is_none());
 
         let new_entry_key = SlateDbFs::dir_entry_key(0, "new.txt");
-        let entry_data = fs.db.get(&new_entry_key).await.unwrap().unwrap();
+        let entry_data = fs.db.get_bytes(&new_entry_key).await.unwrap().unwrap();
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&entry_data[..8]);
         let stored_id = u64::from_le_bytes(bytes);
@@ -320,11 +320,11 @@ mod tests {
 
         // Check that file1.txt no longer exists
         let old_entry_key = SlateDbFs::dir_entry_key(0, "file1.txt");
-        assert!(fs.db.get(&old_entry_key).await.unwrap().is_none());
+        assert!(fs.db.get_bytes(&old_entry_key).await.unwrap().is_none());
 
         // Check that file2.txt exists and has file1's content
         let new_entry_key = SlateDbFs::dir_entry_key(0, "file2.txt");
-        let entry_data = fs.db.get(&new_entry_key).await.unwrap().unwrap();
+        let entry_data = fs.db.get_bytes(&new_entry_key).await.unwrap().unwrap();
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&entry_data[..8]);
         let stored_id = u64::from_le_bytes(bytes);
@@ -366,11 +366,11 @@ mod tests {
 
         // Check file removed from dir1
         let old_entry_key = SlateDbFs::dir_entry_key(dir1_id, "file.txt");
-        assert!(fs.db.get(&old_entry_key).await.unwrap().is_none());
+        assert!(fs.db.get_bytes(&old_entry_key).await.unwrap().is_none());
 
         // Check file added to dir2
         let new_entry_key = SlateDbFs::dir_entry_key(dir2_id, "moved.txt");
-        let entry_data = fs.db.get(&new_entry_key).await.unwrap().unwrap();
+        let entry_data = fs.db.get_bytes(&new_entry_key).await.unwrap().unwrap();
         let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&entry_data[..8]);
         let stored_id = u64::from_le_bytes(bytes);

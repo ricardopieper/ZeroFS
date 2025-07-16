@@ -3,7 +3,7 @@ use nfsserve::nfs::{
     set_size3, set_uid3,
 };
 use nfsserve::vfs::AuthContext;
-use slatedb::{WriteBatch, config::WriteOptions};
+use slatedb::config::WriteOptions;
 use tracing::debug;
 
 use super::common::validate_filename;
@@ -109,7 +109,7 @@ impl SlateDbFs {
                         file.ctime = now_sec;
                         file.ctime_nsec = now_nsec;
 
-                        let mut batch = WriteBatch::new();
+                        let mut batch = self.db.new_write_batch();
 
                         if new_size < old_size {
                             let old_chunks = old_size.div_ceil(CHUNK_SIZE as u64) as usize;
@@ -117,7 +117,7 @@ impl SlateDbFs {
 
                             for chunk_idx in new_chunks..old_chunks {
                                 let key = Self::chunk_key_by_index(id, chunk_idx);
-                                batch.delete(key);
+                                batch.delete_bytes(&key);
                             }
 
                             if new_size > 0 && new_size % CHUNK_SIZE as u64 != 0 {
@@ -125,15 +125,20 @@ impl SlateDbFs {
                                 let last_chunk_size = (new_size % CHUNK_SIZE as u64) as usize;
 
                                 let key = Self::chunk_key_by_index(id, last_chunk_idx);
-                                if let Some(old_chunk_data) =
-                                    self.db.get(&key).await.map_err(|_| nfsstat3::NFS3ERR_IO)?
+                                if let Some(old_chunk_data) = self
+                                    .db
+                                    .get_bytes(&key)
+                                    .await
+                                    .map_err(|_| nfsstat3::NFS3ERR_IO)?
                                 {
                                     let mut new_chunk_data = vec![0u8; last_chunk_size];
                                     new_chunk_data.copy_from_slice(
                                         &old_chunk_data
                                             [..last_chunk_size.min(old_chunk_data.len())],
                                     );
-                                    batch.put(key, &new_chunk_data);
+                                    batch
+                                        .put_bytes(&key, &new_chunk_data)
+                                        .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                                 }
                             }
                         } else if new_size > old_size && old_size > 0 {
@@ -142,8 +147,11 @@ impl SlateDbFs {
 
                             if last_old_chunk_end > 0 {
                                 let key = Self::chunk_key_by_index(id, last_old_chunk_idx);
-                                if let Some(old_chunk_data) =
-                                    self.db.get(&key).await.map_err(|_| nfsstat3::NFS3ERR_IO)?
+                                if let Some(old_chunk_data) = self
+                                    .db
+                                    .get_bytes(&key)
+                                    .await
+                                    .map_err(|_| nfsstat3::NFS3ERR_IO)?
                                 {
                                     let new_chunk_size = if (last_old_chunk_idx + 1) * CHUNK_SIZE
                                         <= new_size as usize
@@ -157,7 +165,9 @@ impl SlateDbFs {
                                         let mut extended_chunk = vec![0u8; new_chunk_size];
                                         extended_chunk[..old_chunk_data.len()]
                                             .copy_from_slice(&old_chunk_data);
-                                        batch.put(key, &extended_chunk);
+                                        batch
+                                            .put_bytes(&key, &extended_chunk)
+                                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                                     }
                                 }
                             }
@@ -166,7 +176,9 @@ impl SlateDbFs {
                         let inode_key = Self::inode_key(id);
                         let inode_data =
                             bincode::serialize(&inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put(inode_key, &inode_data);
+                        batch
+                            .put_bytes(&inode_key, &inode_data)
+                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                         self.db
                             .write_with_options(
@@ -544,7 +556,7 @@ impl SlateDbFs {
 
                 if self
                     .db
-                    .get(&entry_key)
+                    .get_bytes(&entry_key)
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?
                     .is_some()
@@ -598,17 +610,23 @@ impl SlateDbFs {
                     _ => return Err(nfsstat3::NFS3ERR_INVAL),
                 };
 
-                let mut batch = WriteBatch::new();
+                let mut batch = self.db.new_write_batch();
 
                 let special_inode_key = Self::inode_key(special_id);
                 let special_inode_data =
                     bincode::serialize(&inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(special_inode_key, &special_inode_data);
+                batch
+                    .put_bytes(&special_inode_key, &special_inode_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                batch.put(entry_key, special_id.to_le_bytes());
+                batch
+                    .put_bytes(&entry_key, &special_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let scan_key = Self::dir_scan_key(dirid, special_id, &name);
-                batch.put(scan_key, special_id.to_le_bytes());
+                batch
+                    .put_bytes(&scan_key, &special_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 dir.entry_count += 1;
                 let (now_sec, now_nsec) = get_current_time();
@@ -620,7 +638,9 @@ impl SlateDbFs {
                 let dir_inode_key = Self::inode_key(dirid);
                 let dir_inode_data =
                     bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(dir_inode_key, &dir_inode_data);
+                batch
+                    .put_bytes(&dir_inode_key, &dir_inode_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 self.db
                     .write_with_options(

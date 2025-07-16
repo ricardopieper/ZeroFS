@@ -9,9 +9,7 @@ tokio = { version = "1.46", features = ["full"] }
 async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-slatedb = { git = "https://github.com/slatedb/slatedb.git", rev = "2fe991affaed8e2cb9caf3eed73589367484f09a", features = [
-    "lz4",
-] }
+slatedb = { git = "https://github.com/slatedb/slatedb.git", rev = "2fe991affaed8e2cb9caf3eed73589367484f09a" }
 object_store = { version = "0.12", features = ["aws"] }
 bytes = "1.5"
 serde = { version = "1.0", features = ["derive"] }
@@ -20,6 +18,13 @@ rand = "0.8"
 libc = "0.2"
 futures = "0.3"
 foyer = "0.18"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+zstd = "0.13"
+anyhow = "1.0"
+hex = "0.4"
+argon2 = "0.5"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", features = ["background_threads"] }

@@ -1,10 +1,12 @@
+use bytes::Bytes;
+use futures::pin_mut;
 use futures::stream::{self, StreamExt};
 use nfsserve::nfs::{
     fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
     set_uid3,
 };
 use nfsserve::vfs::{AuthContext, DirEntry, ReadDirResult};
-use slatedb::{WriteBatch, config::WriteOptions};
+use slatedb::config::WriteOptions;
 use std::sync::atomic::Ordering;
 use tracing::debug;
 
@@ -52,7 +54,7 @@ impl SlateDbFs {
                 let entry_key = Self::dir_entry_key(dirid, &name);
                 if self
                     .db
-                    .get(&entry_key)
+                    .get_bytes(&entry_key)
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?
                     .is_some()
@@ -122,17 +124,23 @@ impl SlateDbFs {
                     nlink: 2, // . and parent's reference
                 };
 
-                let mut batch = WriteBatch::new();
+                let mut batch = self.db.new_write_batch();
 
                 let new_dir_key = Self::inode_key(new_dir_id);
                 let new_dir_data = bincode::serialize(&Inode::Directory(new_dir_inode.clone()))
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(new_dir_key, &new_dir_data);
+                batch
+                    .put_bytes(&new_dir_key, &new_dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                batch.put(entry_key, new_dir_id.to_le_bytes());
+                batch
+                    .put_bytes(&entry_key, &new_dir_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let scan_key = Self::dir_scan_key(dirid, new_dir_id, &name);
-                batch.put(scan_key, new_dir_id.to_le_bytes());
+                batch
+                    .put_bytes(&scan_key, &new_dir_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 dir.entry_count += 1;
                 dir.nlink += 1; // New subdirectory's ".." points to this directory
@@ -145,12 +153,16 @@ impl SlateDbFs {
                 // Persist the counter
                 let counter_key = Self::counter_key();
                 let next_id = self.next_inode_id.load(Ordering::SeqCst);
-                batch.put(counter_key, next_id.to_le_bytes());
+                batch
+                    .put_bytes(&counter_key, &next_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let parent_dir_key = Self::inode_key(dirid);
                 let parent_dir_data =
                     bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put(parent_dir_key, &parent_dir_data);
+                batch
+                    .put_bytes(&parent_dir_key, &parent_dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 self.db
                     .write_with_options(
@@ -233,21 +245,21 @@ impl SlateDbFs {
                 };
                 let end_key = format!("dirscan:{dirid}0");
 
-                let mut iter = self
+                let iter = self
                     .db
-                    .scan(start_key..end_key)
+                    .scan(Bytes::from(start_key)..Bytes::from(end_key))
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                pin_mut!(iter);
 
                 let mut dir_entries = Vec::new();
-                while let Some(kv) = iter.next().await.map_err(|_| nfsstat3::NFS3ERR_IO)? {
+                while let Some(result) = iter.next().await {
                     if dir_entries.len() >= max_entries - entries.len() {
                         debug!("readdir: reached max_entries limit");
                         break;
                     }
 
-                    let key = kv.key;
-                    let _value = kv.value;
+                    let (key, _value) = result.map_err(|_| nfsstat3::NFS3ERR_IO)?;
                     let key_str = String::from_utf8_lossy(&key);
 
                     // Extract the inode ID and filename from the key
