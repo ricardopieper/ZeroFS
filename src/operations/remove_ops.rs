@@ -86,7 +86,9 @@ impl SlateDbFs {
                             let inode_key = Self::inode_key(file_id);
                             let inode_data = bincode::serialize(&file_inode)
                                 .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                            batch.put_bytes(&inode_key, &inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                            batch
+                                .put_bytes(&inode_key, &inode_data)
+                                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                         } else {
                             // Last link, delete all data chunks
                             let total_chunks = file.size.div_ceil(CHUNK_SIZE as u64) as usize;
@@ -129,7 +131,9 @@ impl SlateDbFs {
                             let inode_key = Self::inode_key(file_id);
                             let inode_data = bincode::serialize(&file_inode)
                                 .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                            batch.put_bytes(&inode_key, &inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                            batch
+                                .put_bytes(&inode_key, &inode_data)
+                                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                         } else {
                             // Last link, delete the inode
                             let inode_key = Self::inode_key(file_id);
@@ -152,7 +156,9 @@ impl SlateDbFs {
 
                 let dir_key = Self::inode_key(dirid);
                 let dir_data = bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put_bytes(&dir_key, &dir_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&dir_key, &dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 self.db
                     .write_with_options(

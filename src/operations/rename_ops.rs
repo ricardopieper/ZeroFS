@@ -190,7 +190,9 @@ impl SlateDbFs {
                         let inode_key = Self::inode_key(target_id);
                         let inode_data = bincode::serialize(&Inode::$inode_variant($special))
                             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put_bytes(&inode_key, &inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                        batch
+                            .put_bytes(&inode_key, &inode_data)
+                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                     } else {
                         let inode_key = Self::inode_key(target_id);
                         batch.delete_bytes(&inode_key);
@@ -211,7 +213,9 @@ impl SlateDbFs {
                         let inode_key = Self::inode_key(target_id);
                         let inode_data = bincode::serialize(&Inode::File(file))
                             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put_bytes(&inode_key, &inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                        batch
+                            .put_bytes(&inode_key, &inode_data)
+                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                     } else {
                         // Last link, delete the file and its data
                         let total_chunks = file.size.div_ceil(CHUNK_SIZE as u64) as usize;
@@ -254,9 +258,13 @@ impl SlateDbFs {
         let from_scan_key = Self::dir_scan_key(from_dirid, source_inode_id, &from_name);
         batch.delete_bytes(&from_scan_key);
 
-        batch.put_bytes(&to_entry_key, &source_inode_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&to_entry_key, &source_inode_id.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
         let to_scan_key = Self::dir_scan_key(to_dirid, source_inode_id, &to_name);
-        batch.put_bytes(&to_scan_key, &source_inode_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&to_scan_key, &source_inode_id.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         // Update the moved inode's parent field if moving to different directory
         if from_dirid != to_dirid {
@@ -270,10 +278,12 @@ impl SlateDbFs {
                 Inode::CharDevice(s) => s.parent = to_dirid,
                 Inode::BlockDevice(s) => s.parent = to_dirid,
             }
-            batch.put_bytes(
-                &Self::inode_key(source_inode_id),
-                &bincode::serialize(&moved_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
-            ).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            batch
+                .put_bytes(
+                    &Self::inode_key(source_inode_id),
+                    &bincode::serialize(&moved_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
+                )
+                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
         }
 
         let (now_sec, now_nsec) = get_current_time();
@@ -294,10 +304,12 @@ impl SlateDbFs {
             d.ctime = now_sec;
             d.ctime_nsec = now_nsec;
         }
-        batch.put_bytes(
-            &Self::inode_key(from_dirid),
-            &bincode::serialize(&from_dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
-        ).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(
+                &Self::inode_key(from_dirid),
+                &bincode::serialize(&from_dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
+            )
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         // Update target directory if different from source
         if from_dirid != to_dirid {
@@ -317,10 +329,12 @@ impl SlateDbFs {
                 d.ctime = now_sec;
                 d.ctime_nsec = now_nsec;
             }
-            batch.put_bytes(
-                &Self::inode_key(to_dirid),
-                &bincode::serialize(&to_dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
-            ).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            batch
+                .put_bytes(
+                    &Self::inode_key(to_dirid),
+                    &bincode::serialize(&to_dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
+                )
+                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
         } else {
             // Same directory rename
             let mut dir_inode = self.load_inode(from_dirid).await?;
@@ -336,10 +350,12 @@ impl SlateDbFs {
                 d.ctime = now_sec;
                 d.ctime_nsec = now_nsec;
             }
-            batch.put_bytes(
-                &Self::inode_key(from_dirid),
-                &bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
-            ).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+            batch
+                .put_bytes(
+                    &Self::inode_key(from_dirid),
+                    &bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?,
+                )
+                .map_err(|_| nfsstat3::NFS3ERR_IO)?;
         }
 
         self.db

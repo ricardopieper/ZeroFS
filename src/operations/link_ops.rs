@@ -96,14 +96,20 @@ impl SlateDbFs {
 
         let inode_key = Self::inode_key(new_id);
         let inode_data = bincode::serialize(&symlink_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        batch.put_bytes(&inode_key, &inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&inode_key, &inode_data)
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         // Add directory entry (for lookup by name)
-        batch.put_bytes(&entry_key, &new_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&entry_key, &new_id.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         // Add directory scan entry (for efficient readdir)
         let scan_key = Self::dir_scan_key(dirid, new_id, &linkname_str);
-        batch.put_bytes(&scan_key, &new_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&scan_key, &new_id.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         dir.entry_count += 1;
         let (now_sec, now_nsec) = get_current_time();
@@ -115,11 +121,15 @@ impl SlateDbFs {
         // Persist the counter
         let counter_key = Self::counter_key();
         let next_id = self.next_inode_id.load(Ordering::SeqCst);
-        batch.put_bytes(&counter_key, &next_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&counter_key, &next_id.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         let dir_key = Self::inode_key(dirid);
         let dir_data = bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        batch.put_bytes(&dir_key, &dir_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&dir_key, &dir_data)
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         self.db
             .write_with_options(
@@ -197,10 +207,14 @@ impl SlateDbFs {
         }
 
         let mut batch = self.db.new_write_batch();
-        batch.put_bytes(&entry_key, &fileid.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&entry_key, &fileid.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         let scan_key = Self::dir_scan_key(linkdirid, fileid, &name);
-        batch.put_bytes(&scan_key, &fileid.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&scan_key, &fileid.to_le_bytes())
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         let (now_sec, now_nsec) = get_current_time();
         match &mut file_inode {
@@ -222,7 +236,9 @@ impl SlateDbFs {
 
         let file_inode_key = Self::inode_key(fileid);
         let file_inode_data = bincode::serialize(&file_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        batch.put_bytes(&file_inode_key, &file_inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&file_inode_key, &file_inode_data)
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         link_dir.entry_count += 1;
         link_dir.mtime = now_sec;
@@ -233,7 +249,9 @@ impl SlateDbFs {
         let dir_inode_key = Self::inode_key(linkdirid);
         let dir_inode_data =
             bincode::serialize(&Inode::Directory(link_dir)).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-        batch.put_bytes(&dir_inode_key, &dir_inode_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+        batch
+            .put_bytes(&dir_inode_key, &dir_inode_data)
+            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
         self.db
             .write_with_options(

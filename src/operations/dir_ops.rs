@@ -1,6 +1,6 @@
 use bytes::Bytes;
-use futures::stream::{self, StreamExt};
 use futures::pin_mut;
+use futures::stream::{self, StreamExt};
 use nfsserve::nfs::{
     fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
     set_uid3,
@@ -129,12 +129,18 @@ impl SlateDbFs {
                 let new_dir_key = Self::inode_key(new_dir_id);
                 let new_dir_data = bincode::serialize(&Inode::Directory(new_dir_inode.clone()))
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put_bytes(&new_dir_key, &new_dir_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&new_dir_key, &new_dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                batch.put_bytes(&entry_key, &new_dir_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&entry_key, &new_dir_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let scan_key = Self::dir_scan_key(dirid, new_dir_id, &name);
-                batch.put_bytes(&scan_key, &new_dir_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&scan_key, &new_dir_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 dir.entry_count += 1;
                 dir.nlink += 1; // New subdirectory's ".." points to this directory
@@ -147,12 +153,16 @@ impl SlateDbFs {
                 // Persist the counter
                 let counter_key = Self::counter_key();
                 let next_id = self.next_inode_id.load(Ordering::SeqCst);
-                batch.put_bytes(&counter_key, &next_id.to_le_bytes()).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&counter_key, &next_id.to_le_bytes())
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 let parent_dir_key = Self::inode_key(dirid);
                 let parent_dir_data =
                     bincode::serialize(&dir_inode).map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                batch.put_bytes(&parent_dir_key, &parent_dir_data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                batch
+                    .put_bytes(&parent_dir_key, &parent_dir_data)
+                    .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
                 self.db
                     .write_with_options(

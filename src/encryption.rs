@@ -136,8 +136,8 @@ impl EncryptedDb {
     pub async fn get_bytes(&self, key: &bytes::Bytes) -> Result<Option<bytes::Bytes>> {
         match self.inner.get(key).await? {
             Some(encrypted) => {
-                let key_str =
-                    std::str::from_utf8(key).map_err(|e| anyhow::anyhow!("Invalid UTF8 in key: {}", e))?;
+                let key_str = std::str::from_utf8(key)
+                    .map_err(|e| anyhow::anyhow!("Invalid UTF8 in key: {}", e))?;
                 let decrypted = self.encryptor.decrypt(key_str, &encrypted)?;
                 Ok(Some(bytes::Bytes::from(decrypted)))
             }
