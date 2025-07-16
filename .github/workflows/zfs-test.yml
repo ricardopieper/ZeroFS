@@ -1,0 +1,191 @@
+name: ZFS on ZeroFS Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  zfs-test:
+    name: Run ZFS on top of ZeroFS
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start MinIO
+        run: |
+          docker run -d \
+            --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+
+          # Wait for MinIO to be ready
+          for i in {1..30}; do
+            if curl -f http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nfs-common zfsutils-linux wget
+
+      - name: Setup MinIO bucket
+        run: |
+          # Install mc (MinIO client)
+          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          ./mc alias set myminio http://localhost:9000 minioadmin minioadmin
+          ./mc mb myminio/zerofs-zfs-test || true
+
+      - name: Build ZeroFS
+        run: cargo build --release
+
+      - name: Start ZeroFS
+        run: |
+          # Create cache directory
+          mkdir -p /tmp/zerofs-cache
+
+          # Start ZeroFS in the background
+          AWS_ENDPOINT_URL=http://localhost:9000 \
+          AWS_S3_BUCKET=zerofs-zfs-test \
+          AWS_ACCESS_KEY_ID=minioadmin \
+          AWS_SECRET_ACCESS_KEY=minioadmin \
+          AWS_ALLOW_HTTP=true \
+          SLATEDB_CACHE_DIR=/tmp/zerofs-cache \
+          SLATEDB_CACHE_SIZE_GB=2 \
+          ZEROFS_ENCRYPTION_PASSWORD=secret \
+          cargo run --release zfs-test &
+
+          # Wait for ZeroFS to start
+          echo "Waiting for ZeroFS to start..."
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 2049; then
+              echo "ZeroFS is ready"
+              break
+            fi
+            sleep 1
+          done
+
+          # Verify ZeroFS is running
+          if ! nc -z 127.0.0.1 2049; then
+            echo "ZeroFS failed to start"
+            exit 1
+          fi
+
+      - name: Mount NFS
+        run: |
+          # Create mount point
+          sudo mkdir -p /mnt/zerofs
+
+          # Mount ZeroFS via NFS
+          sudo mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt/zerofs
+
+          # Verify mount
+          mount | grep zerofs
+          df -h /mnt/zerofs
+
+      - name: Create ZFS pool file
+        run: |
+          # Create a 2GB file for ZFS pool
+          echo "Creating 2GB file for ZFS pool..."
+          sudo dd if=/dev/zero of=/mnt/zerofs/zpool.img bs=1M count=2048 status=progress
+
+          # Verify file was created
+          ls -lh /mnt/zerofs/zpool.img
+
+      - name: Create ZFS pool
+        run: |
+          # Create ZFS pool on the file
+          echo "Creating ZFS pool..."
+          sudo zpool create testpool /mnt/zerofs/zpool.img
+
+          # Check pool status
+          sudo zpool status testpool
+          sudo zpool list testpool
+
+      - name: Create ZFS filesystem
+        run: |
+          # Create a ZFS filesystem
+          sudo zfs create testpool/data
+
+          # Set mountpoint
+          sudo zfs set mountpoint=/mnt/zfsdata testpool/data
+          
+          # Set copies=2 for redundancy (allows scrub to detect/repair corruption)
+          sudo zfs set copies=2 testpool/data
+
+          # List filesystems
+          sudo zfs list
+
+      - name: Download and extract Linux kernel
+        run: |
+          # Download Linux kernel source
+          echo "Downloading Linux kernel 6.15.6..."
+          cd /mnt/zfsdata
+          sudo wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.15.6.tar.xz
+
+          # Show download size
+          ls -lh linux-6.15.6.tar.xz
+
+          # Extract kernel (this tests many small file operations)
+          echo "Extracting kernel source..."
+          time sudo tar -xf linux-6.15.6.tar.xz
+
+          # Count files to verify extraction
+          echo "Counting extracted files..."
+          sudo find linux-6.15.6 -type f | wc -l
+
+      - name: Test ZFS operations
+        run: |
+          # Create a snapshot
+          echo "Creating ZFS snapshot..."
+          sudo zfs snapshot testpool/data@after-kernel
+
+          # List snapshots
+          sudo zfs list -t snapshot
+
+          # Show pool I/O statistics
+          sudo zpool iostat testpool 1 5
+
+          # Create some test files
+          echo "Creating test files..."
+          sudo dd if=/dev/urandom of=/mnt/zfsdata/random.dat bs=1M count=100
+
+          # Create another snapshot
+          sudo zfs snapshot testpool/data@after-random
+
+          # Show space usage
+          sudo zfs list -o name,used,avail,refer,mountpoint
+
+          echo "Starting ZFS scrub..."
+          sudo zpool scrub testpool
+          sleep 5
+          sudo zpool status testpool
+
+      - name: Show ZeroFS S3 usage
+        run: |
+          # Show how much data was written to S3
+          ./mc du myminio/zerofs-zfs-test
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Export and destroy ZFS pool
+          sudo zpool export testpool || true
+
+          # Unmount
+          sudo umount /mnt/zerofs || true
+
+          # Kill ZeroFS
+          pkill -f "cargo run --release zfs-test" || true
+
+          # Stop MinIO
+          docker stop minio || true
