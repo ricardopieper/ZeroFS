@@ -74,9 +74,9 @@ impl EncryptionManager {
             .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
 
         // Decompress chunks
-        if key.starts_with("chunk:") && decrypted.len() > 0 {
+        if key.starts_with("chunk:") && !decrypted.is_empty() {
             // Check if data was compressed (zstd magic number)
-            if decrypted.len() >= 4 && &decrypted[0..4] == &[0x28, 0xb5, 0x2f, 0xfd] {
+            if decrypted.len() >= 4 && decrypted[0..4] == [0x28, 0xb5, 0x2f, 0xfd] {
                 zstd::decode_all(&decrypted[..])
                     .map_err(|e| anyhow::anyhow!("Decompression failed: {}", e))
             } else {

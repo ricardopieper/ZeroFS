@@ -351,10 +351,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(pwd) => pwd,
         Err(_) => {
             eprintln!("Error: ZEROFS_ENCRYPTION_PASSWORD environment variable is required");
-            eprintln!("");
+            eprintln!();
             eprintln!("Usage:");
             eprintln!("  ZEROFS_ENCRYPTION_PASSWORD='your-password' zerofs <path>");
-            eprintln!("");
+            eprintln!();
             eprintln!("To change password:");
             eprintln!(
                 "  ZEROFS_ENCRYPTION_PASSWORD='current-password' ZEROFS_NEW_PASSWORD='new-password' zerofs <path>"
