@@ -161,6 +161,25 @@ impl SlateDbFs {
             // Track if we're replacing a directory
             target_was_directory = matches!(existing_inode, Inode::Directory(_));
 
+            macro_rules! handle_special_file {
+                ($special:expr, $inode_variant:ident) => {
+                    if $special.nlink > 1 {
+                        $special.nlink -= 1;
+                        let (now_sec, now_nsec) = get_current_time();
+                        $special.ctime = now_sec;
+                        $special.ctime_nsec = now_nsec;
+
+                        let inode_key = Self::inode_key(target_id);
+                        let inode_data = bincode::serialize(&Inode::$inode_variant($special))
+                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
+                        batch.put(inode_key, &inode_data);
+                    } else {
+                        let inode_key = Self::inode_key(target_id);
+                        batch.delete(inode_key);
+                    }
+                };
+            }
+
             match existing_inode {
                 Inode::File(mut file) => {
                     // For regular files, check if it has multiple hard links
@@ -187,7 +206,6 @@ impl SlateDbFs {
                     }
                 }
                 Inode::Directory(_) => {
-                    // Directory case already handled above (must be empty)
                     let inode_key = Self::inode_key(target_id);
                     batch.delete(inode_key);
                 }
@@ -196,80 +214,16 @@ impl SlateDbFs {
                     batch.delete(inode_key);
                 }
                 Inode::Fifo(mut special) => {
-                    // Special files can have multiple hard links
-                    if special.nlink > 1 {
-                        // Just decrement the link count
-                        special.nlink -= 1;
-                        let (now_sec, now_nsec) = get_current_time();
-                        special.ctime = now_sec;
-                        special.ctime_nsec = now_nsec;
-
-                        let inode_key = Self::inode_key(target_id);
-                        let inode_data = bincode::serialize(&Inode::Fifo(special))
-                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put(inode_key, &inode_data);
-                    } else {
-                        // Last link, delete the inode
-                        let inode_key = Self::inode_key(target_id);
-                        batch.delete(inode_key);
-                    }
+                    handle_special_file!(special, Fifo);
                 }
                 Inode::Socket(mut special) => {
-                    // Special files can have multiple hard links
-                    if special.nlink > 1 {
-                        // Just decrement the link count
-                        special.nlink -= 1;
-                        let (now_sec, now_nsec) = get_current_time();
-                        special.ctime = now_sec;
-                        special.ctime_nsec = now_nsec;
-
-                        let inode_key = Self::inode_key(target_id);
-                        let inode_data = bincode::serialize(&Inode::Socket(special))
-                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put(inode_key, &inode_data);
-                    } else {
-                        // Last link, delete the inode
-                        let inode_key = Self::inode_key(target_id);
-                        batch.delete(inode_key);
-                    }
+                    handle_special_file!(special, Socket);
                 }
                 Inode::CharDevice(mut special) => {
-                    // Special files can have multiple hard links
-                    if special.nlink > 1 {
-                        // Just decrement the link count
-                        special.nlink -= 1;
-                        let (now_sec, now_nsec) = get_current_time();
-                        special.ctime = now_sec;
-                        special.ctime_nsec = now_nsec;
-
-                        let inode_key = Self::inode_key(target_id);
-                        let inode_data = bincode::serialize(&Inode::CharDevice(special))
-                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put(inode_key, &inode_data);
-                    } else {
-                        // Last link, delete the inode
-                        let inode_key = Self::inode_key(target_id);
-                        batch.delete(inode_key);
-                    }
+                    handle_special_file!(special, CharDevice);
                 }
                 Inode::BlockDevice(mut special) => {
-                    // Special files can have multiple hard links
-                    if special.nlink > 1 {
-                        // Just decrement the link count
-                        special.nlink -= 1;
-                        let (now_sec, now_nsec) = get_current_time();
-                        special.ctime = now_sec;
-                        special.ctime_nsec = now_nsec;
-
-                        let inode_key = Self::inode_key(target_id);
-                        let inode_data = bincode::serialize(&Inode::BlockDevice(special))
-                            .map_err(|_| nfsstat3::NFS3ERR_IO)?;
-                        batch.put(inode_key, &inode_data);
-                    } else {
-                        // Last link, delete the inode
-                        let inode_key = Self::inode_key(target_id);
-                        batch.delete(inode_key);
-                    }
+                    handle_special_file!(special, BlockDevice);
                 }
             }
 
