@@ -30,6 +30,7 @@ ZeroFS can self-host! Here's a demo showing Rust's toolchain building ZeroFS whi
 
 - `SLATEDB_CACHE_DIR`: Directory path for caching data (required)
 - `SLATEDB_CACHE_SIZE_GB`: Cache size in gigabytes (required, must be a positive number)
+- `ZEROFS_ENCRYPTION_PASSWORD`: Password for filesystem encryption (required)
 
 ### Optional Environment Variables
 
@@ -39,6 +40,44 @@ ZeroFS can self-host! Here's a demo showing Rust's toolchain building ZeroFS whi
 - `AWS_SECRET_ACCESS_KEY`: AWS secret access key
 - `AWS_DEFAULT_REGION`: AWS region (default: "us-east-1")
 - `AWS_ALLOW_HTTP`: Allow HTTP connections (default: "false")
+
+### Encryption
+
+Encryption is always enabled in ZeroFS. All file data is encrypted using ChaCha20-Poly1305 authenticated encryption with zstd compression. A password is required to start the filesystem:
+
+```bash
+# Start ZeroFS with encryption password
+ZEROFS_ENCRYPTION_PASSWORD='your-secure-password' zerofs /path/to/db
+```
+
+#### Password Management
+
+On first run, ZeroFS generates a 256-bit data encryption key (DEK) and encrypts it with a key derived from your password using Argon2id. The encrypted key is stored in the database, so you need the same password for subsequent runs.
+
+To change your password:
+
+```bash
+# Change the encryption password
+ZEROFS_ENCRYPTION_PASSWORD='current-password' \
+ZEROFS_NEW_PASSWORD='new-password' \
+zerofs /path/to/db
+```
+
+The program will change the password and exit. Then you can use the new password for future runs.
+
+#### What's Encrypted vs What's Not
+
+**Encrypted:**
+- All file contents (in 64KB chunks)
+- File metadata values (permissions, timestamps, etc.)
+
+**Not Encrypted:**
+- Key structure (inode IDs, directory entry names)
+- Database structure (LSM tree levels, bloom filters)
+
+This design is intentional. Encrypting keys would severely impact performance as LSM trees need to compare and sort keys during compaction. The key structure reveals filesystem hierarchy but not file contents.
+
+This should be fine for most use-cases but if you need to hide directory structure and filenames, you can layer a filename-encrypting filesystem like gocryptfs on top of ZeroFS.
 
 ## Mounting the Filesystem
 
