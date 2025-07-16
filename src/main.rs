@@ -487,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for (&port, &size) in ports.iter().zip(sizes.iter()) {
             let mut nbd_server = NBDServer::new(Arc::clone(&fs_arc), port);
-            nbd_server.add_device(format!("device_{}", port), size);
+            nbd_server.add_device(format!("device_{port}"), size);
 
             info!(
                 "Starting NBD server on port {} with device size {} GB",
@@ -500,7 +500,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if e.kind() == std::io::ErrorKind::InvalidInput
                         && e.to_string().contains("size mismatch")
                     {
-                        eprintln!("NBD Device Size Error: {}", e);
+                        eprintln!("NBD Device Size Error: {e}");
                         eprintln!();
                         eprintln!("To fix this issue:");
                         eprintln!("   • Use the same device size as before, OR");
