@@ -8,8 +8,12 @@ ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://
 
 ## Demo
 
+### Ubuntu Running on ZeroFS
+
+Watch Ubuntu boot from ZeroFS:
+
 <p align="center">
-  <a href="https://asciinema.org/a/idv3T3klsE6FzKqve2vSGav92" target="_blank"><img src="https://asciinema.org/a/idv3T3klsE6FzKqve2vSGav92.svg" /></a>
+<a href="https://asciinema.org/a/728172" target="_blank"><img src="https://asciinema.org/a/728172.svg" /></a>
 </p>
 
 ### Self-Hosting ZeroFS
@@ -61,6 +65,38 @@ For developers, this means you can mount ZeroFS using standard OS tools, monitor
 ## Compatibility
 
 ZeroFS passes all tests in the [pjdfstest_nfs](https://github.com/Barre/pjdfstest_nfs) test suite - 8,662 tests covering POSIX filesystem operations including file operations, permissions, ownership, and more.
+
+## Performance Benchmarks
+
+### SQLite Performance
+
+ZeroFS delivers excellent performance for database workloads. Here are SQLite benchmark results running on ZeroFS:
+
+```
+SQLite:     version 3.25.2
+Date:       Wed Jul 16 12:08:22 2025
+CPU:        8 * AMD EPYC-Rome Processor
+CPUCache:   512 KB
+Keys:       16 bytes each
+Values:     100 bytes each
+Entries:    1000000
+RawSize:    110.6 MB (estimated)
+------------------------------------------------
+fillseq      :      19.426 micros/op;
+readseq      :       0.941 micros/op;
+readrand100K :       1.596 micros/op;
+```
+
+These microsecond-level latencies are 4-5 orders of magnitude faster than raw S3 operations (which typically have 50-300ms latency). This performance is achieved through:
+
+- Multi-layered cache: Memory block cache, metadata cache, and configurable disk cache
+- Compression: Reduces data transfer and increases effective cache capacity
+- Parallel prefetching: Overlaps S3 requests to hide latency
+- Buffering through WAL + memtables: Batches writes to minimize S3 operations
+
+<p align="center">
+  <a href="https://asciinema.org/a/ovxTV0zTpjE1xcxn5CXehCTTN" target="_blank">View SQLite Benchmark Demo</a>
+</p>
 
 ## Key Differences from S3FS
 
