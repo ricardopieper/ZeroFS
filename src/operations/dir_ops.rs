@@ -229,9 +229,9 @@ impl SlateDbFs {
                     scan_prefix.clone()
                 } else {
                     // Start right after the given inode (formatted with leading zeros)
-                    format!("dirscan:{}/{:020}", dirid, start_after + 1)
+                    format!("dirscan:{dirid}/{:020}", start_after + 1)
                 };
-                let end_key = format!("dirscan:{}0", dirid);
+                let end_key = format!("dirscan:{dirid}0");
 
                 let mut iter = self
                     .db

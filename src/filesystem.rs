@@ -166,11 +166,11 @@ impl SlateDbFs {
     }
 
     pub fn inode_key(inode_id: InodeId) -> Bytes {
-        Bytes::from(format!("inode:{}", inode_id))
+        Bytes::from(format!("inode:{inode_id}"))
     }
 
     pub fn chunk_key_by_index(inode_id: InodeId, chunk_index: usize) -> Bytes {
-        Bytes::from(format!("chunk:{}/{}", inode_id, chunk_index))
+        Bytes::from(format!("chunk:{inode_id}/{chunk_index}"))
     }
 
     pub fn counter_key() -> Bytes {
@@ -178,18 +178,17 @@ impl SlateDbFs {
     }
 
     pub fn dir_entry_key(dir_inode_id: InodeId, name: &str) -> Bytes {
-        Bytes::from(format!("direntry:{}/{}", dir_inode_id, name))
+        Bytes::from(format!("direntry:{dir_inode_id}/{name}"))
     }
 
     pub fn dir_scan_key(dir_inode_id: InodeId, entry_inode_id: InodeId, name: &str) -> Bytes {
         Bytes::from(format!(
-            "dirscan:{}/{:020}/{}",
-            dir_inode_id, entry_inode_id, name
+            "dirscan:{dir_inode_id}/{entry_inode_id:020}/{name}",
         ))
     }
 
     pub fn dir_scan_prefix(dir_inode_id: InodeId) -> String {
-        format!("dirscan:{}/", dir_inode_id)
+        format!("dirscan:{dir_inode_id}/")
     }
 
     pub async fn allocate_inode(&self) -> Result<InodeId, nfsstat3> {

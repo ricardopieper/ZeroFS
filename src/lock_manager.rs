@@ -162,6 +162,7 @@ mod tests {
         // With shard grouping, we only acquire shard 0's lock once
         let _guard = manager.acquire_multiple_write(vec![0, 4, 8]).await;
 
+        #[clippy::allow(clippy::assertions_on_constants)]
         assert!(
             true,
             "Successfully acquired multiple inodes mapping to same shard"
