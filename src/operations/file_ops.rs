@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use tracing::{debug, error};
 
 use super::common::validate_filename;
-use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time, get_umask};
+use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::{FileInode, Inode, InodeId};
 use crate::permissions::{AccessMode, Credentials, check_access, validate_mode};
 
@@ -188,13 +188,10 @@ impl SlateDbFs {
                 // If parent has setgid bit set, file inherits parent's group
                 // (gid was already set correctly from parent in the match above)
 
-                // Apply umask to file mode
-                let umask = get_umask();
-                let requested_mode = match attr.mode {
+                let final_mode = match attr.mode {
                     set_mode3::mode(m) => validate_mode(m),
                     _ => 0o666,
                 };
-                let final_mode = requested_mode & !umask;
 
                 let file_inode = FileInode {
                     size: 0,

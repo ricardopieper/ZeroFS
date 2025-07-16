@@ -7,7 +7,7 @@ use slatedb::{WriteBatch, config::WriteOptions};
 use tracing::debug;
 
 use super::common::validate_filename;
-use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time, get_umask};
+use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::{Inode, SpecialInode};
 use crate::permissions::{
     AccessMode, Credentials, can_set_times, check_access, check_ownership, validate_mode,
@@ -547,7 +547,6 @@ impl SlateDbFs {
                 let special_id = self.allocate_inode().await?;
                 let (now_sec, now_nsec) = get_current_time();
 
-                let umask = get_umask();
                 let base_mode = match ftype {
                     ftype3::NF3FIFO => 0o666,
                     ftype3::NF3CHR | ftype3::NF3BLK => 0o666,
@@ -555,10 +554,11 @@ impl SlateDbFs {
                     _ => return Err(nfsstat3::NFS3ERR_INVAL),
                 };
 
-                let mut final_mode = base_mode & !umask;
-                if let set_mode3::mode(m) = attr.mode {
-                    final_mode = validate_mode(m) & !umask;
-                }
+                let final_mode = if let set_mode3::mode(m) = attr.mode {
+                    validate_mode(m)
+                } else {
+                    base_mode
+                };
 
                 let special_inode = SpecialInode {
                     mtime: now_sec,

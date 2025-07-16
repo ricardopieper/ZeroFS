@@ -26,19 +26,6 @@ fn get_current_uid_gid() -> (u32, u32) {
     (0, 0)
 }
 
-#[cfg(unix)]
-pub fn get_umask() -> u32 {
-    unsafe {
-        let current_umask = libc::umask(0);
-        libc::umask(current_umask);
-        current_umask as u32
-    }
-}
-
-#[cfg(not(unix))]
-pub fn get_umask() -> u32 {
-    0o022
-}
 
 pub fn get_current_time() -> (u64, u32) {
     let now = SystemTime::now()

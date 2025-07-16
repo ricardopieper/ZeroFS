@@ -75,7 +75,7 @@ mod tests {
             .unwrap();
 
         assert!(dir_id > 0);
-        assert_eq!(fattr.mode, 0o755);
+        assert_eq!(fattr.mode, 0o777);
         assert!(matches!(fattr.ftype, ftype3::NF3DIR));
 
         let new_dir_inode = fs.load_inode(dir_id).await.unwrap();

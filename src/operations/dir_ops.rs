@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use tracing::debug;
 
 use super::common::validate_filename;
-use crate::filesystem::{SlateDbFs, get_current_time, get_umask};
+use crate::filesystem::{SlateDbFs, get_current_time};
 use crate::inode::{DirectoryInode, Inode};
 use crate::permissions::{AccessMode, Credentials, check_access};
 
@@ -64,10 +64,9 @@ impl SlateDbFs {
 
                 let (now_sec, now_nsec) = get_current_time();
 
-                let umask = get_umask();
                 let mut new_mode = match attr.mode {
-                    set_mode3::mode(m) => m & !umask,
-                    set_mode3::Void => 0o777 & !umask,
+                    set_mode3::mode(m) => m,
+                    set_mode3::Void => 0o777,
                 };
 
                 let parent_mode = dir.mode;

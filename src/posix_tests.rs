@@ -58,8 +58,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             fattr.mode & 0o777,
-            0o755,
-            "Directory permissions should respect umask"
+            0o777,
+            "Directory permissions should not have umask applied by server"
         );
 
         let setattr = sattr3 {
@@ -100,8 +100,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             subdir_fattr.mode & 0o777,
-            0o755,
-            "Subdirectory should have default permissions"
+            0o777,
+            "Subdirectory should not have umask applied by server"
         );
     }
 

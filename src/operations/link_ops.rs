@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use tracing::debug;
 
 use super::common::validate_filename;
-use crate::filesystem::{SlateDbFs, get_current_time, get_umask};
+use crate::filesystem::{SlateDbFs, get_current_time};
 use crate::inode::{Inode, SymlinkInode};
 use crate::permissions::{AccessMode, Credentials, check_access};
 
@@ -58,11 +58,10 @@ impl SlateDbFs {
 
         let new_id = self.allocate_inode().await?;
 
-        let umask = get_umask();
         let mode = if let set_mode3::mode(m) = attr.mode {
-            (m & !umask) | 0o120000
+            m | 0o120000
         } else {
-            0o120777 & !umask
+            0o120777
         };
 
         let uid = if let set_uid3::uid(u) = attr.uid {
