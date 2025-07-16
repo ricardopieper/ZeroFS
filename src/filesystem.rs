@@ -363,10 +363,16 @@ impl SlateDbFs {
         let mut builder = AmazonS3Builder::new()
             .with_bucket_name(&s3_config.bucket_name)
             .with_region(&s3_config.region)
-            .with_access_key_id(&s3_config.access_key_id)
-            .with_secret_access_key(&s3_config.secret_access_key)
             .with_allow_http(s3_config.allow_http)
             .with_conditional_put(S3ConditionalPut::ETagMatch);
+
+        if !s3_config.access_key_id.is_empty() {
+            builder = builder.with_access_key_id(&s3_config.access_key_id);
+        }
+
+        if !s3_config.secret_access_key.is_empty() {
+            builder = builder.with_secret_access_key(s3_config.secret_access_key);
+        }
 
         if !s3_config.endpoint.is_empty() {
             builder = builder.with_endpoint(&s3_config.endpoint);
