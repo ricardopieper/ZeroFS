@@ -20,9 +20,9 @@ We use ZFS as an end-to-end test in our CI. [We create ZFS pools on ZeroFS](http
 
 ### ZFS on S3 via NBD
 
-ZeroFS provides NBD block devices that ZFS can use directly - no intermediate filesystem needed. Here's ZFS running on S3 storage: 
+ZeroFS provides NBD block devices that ZFS can use directly - no intermediate filesystem needed. Here's ZFS running on S3 storage:
 
-<a href="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF" target="_blank"><img src="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF.svg" /></a>
+<a href="https://asciinema.org/a/728234" target="_blank"><img src="https://asciinema.org/a/728234.svg" /></a>
 
 ### Ubuntu Running on ZeroFS
 
