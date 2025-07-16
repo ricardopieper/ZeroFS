@@ -8,6 +8,12 @@ ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://
 
 ## Demo
 
+### ZFS on S3
+
+Plot twist: ZeroFS can host ZFS on S3. We're as surprised as you are. 
+
+<a href="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF" target="_blank"><img src="https://asciinema.org/a/bbqE5zyPkenJeSuHfAT9HqrLF.svg" /></a>
+
 ### Ubuntu Running on ZeroFS
 
 Watch Ubuntu boot from ZeroFS:
