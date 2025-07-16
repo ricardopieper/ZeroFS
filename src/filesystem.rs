@@ -73,11 +73,10 @@ impl SlateDbFs {
             .with_conditional_put(S3ConditionalPut::ETagMatch);
 
         if !s3_config.access_key_id.is_empty() {
-            // Use IMDS for credentials if not provided
             builder = builder.with_access_key_id(&s3_config.access_key_id);
         }
+        
         if !s3_config.secret_access_key.is_empty() {
-            // Use provided credentials
             builder = builder.with_secret_access_key(s3_config.secret_access_key);
         }
 
