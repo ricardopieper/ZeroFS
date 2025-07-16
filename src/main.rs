@@ -394,7 +394,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(0);
             }
             Err(e) => {
-                eprintln!("✗ Failed to change encryption password: {}", e);
+                eprintln!("✗ Failed to change encryption password: {e}");
                 eprintln!(
                     "  This usually means the database was not initialized yet: cannot change a password that does not exists."
                 );
