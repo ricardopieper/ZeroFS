@@ -255,6 +255,7 @@ impl NFSFileSystem for SlateDbFs {
         filename: &filename3,
         ftype: ftype3,
         attr: &sattr3,
+        spec: Option<&specdata3>,
     ) -> Result<(fileid3, fattr3), nfsstat3> {
         debug!(
             "mknod called: dirid={}, filename={:?}, ftype={:?}",
@@ -264,10 +265,8 @@ impl NFSFileSystem for SlateDbFs {
         // Extract device numbers if this is a device file
         let rdev = match ftype {
             ftype3::NF3CHR | ftype3::NF3BLK => {
-                // In NFS3, device numbers are passed in the sattr3 structure
-                // For now, we'll use default values - a proper implementation
-                // would extract these from the protocol
-                Some((0, 0))
+                // Extract device numbers from specdata3
+                spec.map(|s| (s.specdata1, s.specdata2))
             }
             _ => None,
         };

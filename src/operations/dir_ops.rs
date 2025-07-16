@@ -135,7 +135,7 @@ impl SlateDbFs {
                 batch.put(scan_key, new_dir_id.to_le_bytes());
 
                 dir.entry_count += 1;
-                dir.nlink += 1;  // New subdirectory's ".." points to this directory
+                dir.nlink += 1; // New subdirectory's ".." points to this directory
                 let (now_sec, now_nsec) = get_current_time();
                 dir.mtime = now_sec;
                 dir.mtime_nsec = now_nsec;
