@@ -2,9 +2,11 @@
 
 ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://github.com/slatedb/slatedb), it's fast enough to compile code on and works with the NFS client already built into your OS. No FUSE drivers, no kernel modules, just mount and go.
 
-<p align="center">
-  <img src="assets/readme_storage_explanation.png" alt="Storage Architecture" width="500"/>
-</p>
+## Testing
+
+ZeroFS passes all tests in the [pjdfstest_nfs](https://github.com/Barre/pjdfstest_nfs) test suite - 8,662 tests covering POSIX filesystem operations including file operations, permissions, ownership, and more.
+
+We use ZFS as an end-to-end test in our CI. [We create ZFS pools on ZeroFS](https://github.com/Barre/ZeroFS/actions/workflows/zfs-test.yml), extract the Linux kernel source tree, and run scrub operations to verify data integrity. All operations complete without errors. 
 
 ## Demo
 
@@ -97,6 +99,46 @@ mount -t nfs -o nolocks,vers=3,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ mnt
 mount -t nfs -o vers=3,nolock,tcp,port=2049,mountport=2049,soft 127.0.0.1:/ /mnt
 ```
 
+## Geo-Distributed Storage with ZFS
+
+Since ZeroFS makes S3 regions look like local block devices, you can create globally distributed ZFS pools by running multiple ZeroFS instances across different regions:
+
+```bash
+# Terminal 1 - US East
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=us-east-1 zerofs us-east-db
+
+# Terminal 2 - EU West  
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=eu-west-1 zerofs eu-west-db
+
+# Terminal 3 - Asia Pacific
+ZEROFS_ENCRYPTION_PASSWORD='shared-key' AWS_DEFAULT_REGION=ap-southeast-1 zerofs asia-db
+```
+
+Then mount all three and create a geo-distributed ZFS pool:
+
+```bash
+# Mount each region
+mount -t nfs -o vers=3,nolock,tcp,port=2049 127.0.0.1:/ /mnt/us-east
+mount -t nfs -o vers=3,nolock,tcp,port=2050 127.0.0.2:/ /mnt/eu-west  
+mount -t nfs -o vers=3,nolock,tcp,port=2051 127.0.0.3:/ /mnt/asia
+
+# Create files to use as vdevs
+touch /mnt/us-east/disk1 /mnt/eu-west/disk2 /mnt/asia/disk3
+
+# Create a mirrored pool across continents
+zpool create global-pool mirror /mnt/us-east/disk1 /mnt/eu-west/disk2 /mnt/asia/disk3
+```
+
+**Result**: Your ZFS pool now spans three continents with automatic:
+
+- **Disaster recovery** - If any region goes down, your data remains available
+- **Geographic redundancy** - Data is simultaneously stored in multiple regions  
+- **Global performance** - ZFS can read from the closest available copy
+- **Infinite scalability** - Add more regions by spinning up additional ZeroFS instances
+
+This turns expensive geo-distributed storage infrastructure into a few simple commands.
+
+
 ## Why NFS?
 
 We chose NFS because it's supported everywhere - macOS, Linux, Windows, BSD - without requiring any additional software. The client-side kernel implementation is highly optimized, while our server can remain in userspace with full control over the storage backend.
@@ -107,9 +149,6 @@ With FUSE, we'd need to write both the filesystem implementation and a custom cl
 
 For developers, this means you can mount ZeroFS using standard OS tools, monitor it with existing infrastructure, and debug issues with familiar utilities. It just works.
 
-## Compatibility
-
-ZeroFS passes all tests in the [pjdfstest_nfs](https://github.com/Barre/pjdfstest_nfs) test suite - 8,662 tests covering POSIX filesystem operations including file operations, permissions, ownership, and more.
 
 ## Performance Benchmarks
 
