@@ -1,5 +1,5 @@
 #[cfg(test)]
-pub mod test_helpers {
+pub mod test_helpers_mod {
     use nfsserve::nfs::nfsstring;
     use nfsserve::vfs::AuthContext;
 

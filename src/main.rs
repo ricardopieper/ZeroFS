@@ -356,7 +356,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use crate::filesystem::SlateDbFs;
-    use crate::test_helpers::test_helpers::{filename, test_auth};
+    use crate::test_helpers::test_helpers_mod::{filename, test_auth};
     use nfsserve::nfs::{set_atime, set_mtime};
 
     #[tokio::test]

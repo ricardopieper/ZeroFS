@@ -59,10 +59,7 @@ impl LockManager {
     }
 
     /// Acquire multiple write locks with automatic ordering to prevent deadlocks.
-    pub async fn acquire_multiple_write<'a>(
-        &'a self,
-        mut inode_ids: Vec<InodeId>,
-    ) -> MultiLockGuard<'a> {
+    pub async fn acquire_multiple_write(&self, mut inode_ids: Vec<InodeId>) -> MultiLockGuard<'_> {
         // Sort by inode ID to ensure consistent ordering
         inode_ids.sort();
         inode_ids.dedup();

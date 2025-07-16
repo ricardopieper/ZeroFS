@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::filesystem::SlateDbFs;
-    use crate::test_helpers::test_helpers::{filename, test_auth};
+    use crate::test_helpers::test_helpers_mod::{filename, test_auth};
     use nfsserve::nfs::*;
     use nfsserve::vfs::NFSFileSystem;
 
@@ -378,8 +378,8 @@ mod tests {
             uid: set_uid3::Void,
             gid: set_gid3::Void,
             size: set_size3::Void,
-            atime: set_atime::SET_TO_CLIENT_TIME(client_time.clone()),
-            mtime: set_mtime::SET_TO_CLIENT_TIME(client_time.clone()),
+            atime: set_atime::SET_TO_CLIENT_TIME(client_time),
+            mtime: set_mtime::SET_TO_CLIENT_TIME(client_time),
         };
 
         let fattr = fs
