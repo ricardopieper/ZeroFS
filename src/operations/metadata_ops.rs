@@ -74,6 +74,15 @@ impl SlateDbFs {
         }
 
         // For setting times, check can_set_times
+        match setattr.atime {
+            set_atime::SET_TO_CLIENT_TIME(_) => {
+                can_set_times(&inode, &creds, false)?;
+            }
+            set_atime::SET_TO_SERVER_TIME => {
+                can_set_times(&inode, &creds, true)?;
+            }
+            set_atime::DONT_CHANGE => {}
+        }
         match setattr.mtime {
             set_mtime::SET_TO_CLIENT_TIME(_) => {
                 can_set_times(&inode, &creds, false)?;
