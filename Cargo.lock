@@ -3747,6 +3747,7 @@ dependencies = [
  "bytes",
  "chacha20poly1305",
  "foyer 0.18.0",
+ "foyer-common 0.18.0",
  "futures",
  "hex",
  "hkdf",

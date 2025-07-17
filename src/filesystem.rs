@@ -1,4 +1,4 @@
-use crate::cache::{DirEntryCache, MetadataCache, SmallFileCache};
+use crate::cache::{CacheKey, CacheValue, UnifiedCache};
 use crate::encryption::{EncryptedDb, EncryptionManager};
 use crate::lock_manager::LockManager;
 use bytes::Bytes;
@@ -13,6 +13,8 @@ use slatedb::{
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+const SLATEDB_BLOCK_SIZE: usize = 64 * 1024;
 
 use crate::inode::{DirectoryInode, Inode, InodeId};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,7 +36,7 @@ pub fn get_current_time() -> (u64, u32) {
     (now.as_secs(), now.subsec_nanos())
 }
 
-pub const CHUNK_SIZE: usize = 128 * 1024;
+pub const CHUNK_SIZE: usize = 64 * 1024;
 pub const LOCK_SHARD_COUNT: usize = 1024 * 100;
 
 #[derive(Clone)]
@@ -42,9 +44,9 @@ pub struct SlateDbFs {
     pub db: Arc<EncryptedDb>,
     pub lock_manager: Arc<LockManager>,
     pub next_inode_id: Arc<AtomicU64>,
-    pub metadata_cache: Arc<MetadataCache>,
-    pub small_file_cache: Arc<SmallFileCache>,
-    pub dir_entry_cache: Arc<DirEntryCache>,
+    pub metadata_cache: Arc<UnifiedCache>,
+    pub small_file_cache: Arc<UnifiedCache>,
+    pub dir_entry_cache: Arc<UnifiedCache>,
 }
 
 // Struct for temporary unencrypted access (only for key management)
@@ -67,6 +69,7 @@ pub struct S3Config {
 pub struct CacheConfig {
     pub root_folder: String,
     pub max_cache_size_gb: f64,
+    pub memory_cache_size_gb: Option<f64>,
 }
 
 impl SlateDbFs {
@@ -91,12 +94,36 @@ impl SlateDbFs {
         let object_store = builder.build()?;
         let object_store: Arc<dyn ObjectStore> = Arc::new(object_store);
 
-        let cache_size_bytes = (cache_config.max_cache_size_gb * 1_000_000_000.0) as usize;
+        let slatedb_disk_cache_size_gb = cache_config.max_cache_size_gb;
+        let zerofs_memory_cache_gb = cache_config.memory_cache_size_gb.unwrap_or(0.25);
+
+        // SlateDB in-memory block cache: use 1/4 of ZeroFS memory cache size, with min 50MB
+        let slatedb_memory_cache_gb = (zerofs_memory_cache_gb * 0.25).max(0.05);
+
+        tracing::info!(
+            "Cache allocation - Disk: {:.2}GB (all to SlateDB), Memory: SlateDB block cache: {:.2}GB, ZeroFS cache: {:.2}GB",
+            slatedb_disk_cache_size_gb,
+            slatedb_memory_cache_gb,
+            zerofs_memory_cache_gb
+        );
+
+        let slatedb_disk_cache_size_bytes = (slatedb_disk_cache_size_gb * 1_000_000_000.0) as usize;
+        let slatedb_memory_cache_bytes = (slatedb_memory_cache_gb * 1_000_000_000.0) as usize;
+
+        // Calculate number of blocks that can fit in memory cache
+        let slatedb_memory_blocks = slatedb_memory_cache_bytes / SLATEDB_BLOCK_SIZE;
+
+        tracing::info!(
+            "SlateDB in-memory block cache: {} blocks ({} MB)",
+            slatedb_memory_blocks,
+            slatedb_memory_cache_bytes / 1_000_000
+        );
+        let slatedb_cache_dir = format!("{}/slatedb", cache_config.root_folder);
 
         let settings = slatedb::config::Settings {
             object_store_cache_options: ObjectStoreCacheOptions {
-                root_folder: Some(cache_config.root_folder.into()),
-                max_cache_size_bytes: Some(cache_size_bytes),
+                root_folder: Some(slatedb_cache_dir.clone().into()),
+                max_cache_size_bytes: Some(slatedb_disk_cache_size_bytes),
                 ..Default::default()
             },
             compactor_options: Some(slatedb::config::CompactorOptions {
@@ -108,20 +135,21 @@ impl SlateDbFs {
         };
 
         let cache = Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-            max_capacity: 10_000u64,
+            max_capacity: (slatedb_memory_blocks * SLATEDB_BLOCK_SIZE) as u64,
         }));
 
         let db_path = Path::from(db_path);
         let slatedb = Arc::new(
             DbBuilder::new(db_path, object_store)
                 .with_settings(settings)
+                .with_sst_block_size(slatedb::SstBlockSize::Block64Kib)
                 .with_block_cache(cache)
                 .build()
                 .await?,
         );
 
         let encryptor = Arc::new(EncryptionManager::new(&encryption_key));
-        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor));
+        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor.clone()));
 
         let counter_key = Self::counter_key();
         let next_inode_id = match db.get_bytes(&counter_key).await? {
@@ -163,9 +191,24 @@ impl SlateDbFs {
         }
 
         let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
-        let metadata_cache = Arc::new(MetadataCache::new(10_000)); // 10k metadata entries
-        let small_file_cache = Arc::new(SmallFileCache::new(100 * 1024 * 1024)); // 100MB for small files
-        let dir_entry_cache = Arc::new(DirEntryCache::new(50_000)); // 50k directory entries
+
+        // ZeroFS now uses only in-memory cache, no need for disk cache directory
+        let unified_cache = Arc::new(
+            UnifiedCache::new(
+                "",  // Not used for in-memory cache
+                0.0, // Not used for in-memory cache
+                cache_config.memory_cache_size_gb,
+            )
+            .await?,
+        );
+
+        let db = Arc::new(
+            EncryptedDb::new(slatedb.clone(), encryptor).with_cache(unified_cache.clone()),
+        );
+
+        let metadata_cache = unified_cache.clone();
+        let small_file_cache = unified_cache.clone();
+        let dir_entry_cache = unified_cache.clone();
 
         let fs = Self {
             db: db.clone(),
@@ -211,7 +254,8 @@ impl SlateDbFs {
     }
 
     pub async fn load_inode(&self, inode_id: InodeId) -> Result<Inode, nfsstat3> {
-        if let Some(cached_inode) = self.metadata_cache.get(&inode_id) {
+        let cache_key = CacheKey::Metadata(inode_id);
+        if let Some(CacheValue::Metadata(cached_inode)) = self.metadata_cache.get(cache_key).await {
             return Ok((*cached_inode).clone());
         }
 
@@ -225,8 +269,9 @@ impl SlateDbFs {
 
         let inode: Inode = bincode::deserialize(&data).map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-        self.metadata_cache
-            .insert(inode_id, Arc::new(inode.clone()));
+        let cache_key = CacheKey::Metadata(inode_id);
+        let cache_value = CacheValue::Metadata(Arc::new(inode.clone()));
+        self.metadata_cache.insert(cache_key, cache_value, false);
 
         Ok(inode)
     }
@@ -247,11 +292,11 @@ impl SlateDbFs {
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-        self.metadata_cache.remove(&inode_id);
+        self.metadata_cache.remove(CacheKey::Metadata(inode_id));
 
         if let Inode::File(file) = inode {
             if file.size <= crate::cache::SMALL_FILE_THRESHOLD_BYTES {
-                self.small_file_cache.remove(&inode_id);
+                self.small_file_cache.remove(CacheKey::SmallFile(inode_id));
             }
         }
 
@@ -281,8 +326,10 @@ impl SlateDbFs {
             ..Default::default()
         };
 
+        // For tests, calculate blocks for 50MB cache
+        let test_cache_blocks = (50_000_000 / SLATEDB_BLOCK_SIZE).max(100); // Min 100 blocks
         let cache = Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-            max_capacity: 500_000,
+            max_capacity: (test_cache_blocks * SLATEDB_BLOCK_SIZE) as u64,
         }));
 
         let db_path = Path::from("test_slatedb");
@@ -295,7 +342,7 @@ impl SlateDbFs {
         );
 
         let encryptor = Arc::new(EncryptionManager::new(&encryption_key));
-        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor));
+        let db = Arc::new(EncryptedDb::new(slatedb.clone(), encryptor.clone()));
 
         let next_inode_id = 1;
 
@@ -330,9 +377,17 @@ impl SlateDbFs {
         }
 
         let lock_manager = Arc::new(LockManager::new(LOCK_SHARD_COUNT));
-        let metadata_cache = Arc::new(MetadataCache::new(10_000)); // 10k metadata entries
-        let small_file_cache = Arc::new(SmallFileCache::new(100 * 1024 * 1024)); // 100MB for small files
-        let dir_entry_cache = Arc::new(DirEntryCache::new(50_000)); // 50k directory entries
+
+        // ZeroFS uses only in-memory cache for tests (100MB)
+        let unified_cache = Arc::new(UnifiedCache::new("", 0.0, Some(0.1)).await?);
+
+        let db = Arc::new(
+            EncryptedDb::new(slatedb.clone(), encryptor).with_cache(unified_cache.clone()),
+        );
+
+        let metadata_cache = unified_cache.clone();
+        let small_file_cache = unified_cache.clone();
+        let dir_entry_cache = unified_cache.clone();
 
         let fs = Self {
             db: db.clone(),
@@ -369,12 +424,25 @@ impl SlateDbFs {
         let object_store = builder.build()?;
         let object_store: Arc<dyn ObjectStore> = Arc::new(object_store);
 
-        let cache_size_bytes = (cache_config.max_cache_size_gb * 1_000_000_000.0) as usize;
+        let total_cache_size_gb = cache_config.max_cache_size_gb;
+
+        // Since ZeroFS now uses only in-memory cache, allocate all disk cache to SlateDB
+        let slatedb_cache_size_gb = total_cache_size_gb;
+
+        tracing::info!(
+            "Cache allocation - Total: {:.2}GB, SlateDB (disk): {:.2}GB, ZeroFS (memory): {:.2}GB",
+            total_cache_size_gb,
+            slatedb_cache_size_gb,
+            cache_config.memory_cache_size_gb.unwrap_or(0.25)
+        );
+
+        let slatedb_cache_size_bytes = (slatedb_cache_size_gb * 1_000_000_000.0) as usize;
+        let slatedb_cache_dir = format!("{}/slatedb", cache_config.root_folder);
 
         let settings = slatedb::config::Settings {
             object_store_cache_options: ObjectStoreCacheOptions {
-                root_folder: Some(cache_config.root_folder.into()),
-                max_cache_size_bytes: Some(cache_size_bytes),
+                root_folder: Some(slatedb_cache_dir.clone().into()),
+                max_cache_size_bytes: Some(slatedb_cache_size_bytes),
                 ..Default::default()
             },
             compactor_options: Some(slatedb::config::CompactorOptions {
@@ -385,8 +453,10 @@ impl SlateDbFs {
             ..Default::default()
         };
 
+        // For unencrypted version, calculate blocks for 250MB cache
+        let unencrypted_cache_blocks = (250_000_000 / SLATEDB_BLOCK_SIZE).max(100); // Min 100 blocks
         let cache = Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-            max_capacity: cache_size_bytes as u64,
+            max_capacity: (unencrypted_cache_blocks * SLATEDB_BLOCK_SIZE) as u64,
         }));
 
         let slatedb = Arc::new(

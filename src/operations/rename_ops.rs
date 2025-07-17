@@ -4,6 +4,7 @@ use slatedb::config::WriteOptions;
 use tracing::debug;
 
 use super::common::validate_filename;
+use crate::cache::CacheKey;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::Inode;
 use crate::permissions::{AccessMode, Credentials, check_access, check_sticky_bit_delete};
@@ -368,17 +369,24 @@ impl SlateDbFs {
             .await
             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-        self.metadata_cache.remove(&source_inode_id);
+        self.metadata_cache
+            .remove(CacheKey::Metadata(source_inode_id));
         if let Some(target_id) = target_inode_id {
-            self.metadata_cache.remove(&target_id);
-            self.small_file_cache.remove(&target_id);
+            self.metadata_cache.remove(CacheKey::Metadata(target_id));
+            self.small_file_cache.remove(CacheKey::SmallFile(target_id));
         }
-        self.metadata_cache.remove(&from_dirid);
+        self.metadata_cache.remove(CacheKey::Metadata(from_dirid));
         if from_dirid != to_dirid {
-            self.metadata_cache.remove(&to_dirid);
+            self.metadata_cache.remove(CacheKey::Metadata(to_dirid));
         }
-        self.dir_entry_cache.remove(from_dirid, &from_name);
-        self.dir_entry_cache.remove(to_dirid, &to_name);
+        self.dir_entry_cache.remove(CacheKey::DirEntry {
+            dir_id: from_dirid,
+            name: from_name.clone(),
+        });
+        self.dir_entry_cache.remove(CacheKey::DirEntry {
+            dir_id: to_dirid,
+            name: to_name.clone(),
+        });
 
         Ok(())
     }

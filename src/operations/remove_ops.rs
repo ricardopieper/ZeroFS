@@ -170,10 +170,13 @@ impl SlateDbFs {
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                self.metadata_cache.remove(&file_id);
-                self.metadata_cache.remove(&dirid);
-                self.small_file_cache.remove(&file_id);
-                self.dir_entry_cache.remove(dirid, &name);
+                self.metadata_cache.remove(crate::cache::CacheKey::Metadata(file_id));
+                self.metadata_cache.remove(crate::cache::CacheKey::Metadata(dirid));
+                self.small_file_cache.remove(crate::cache::CacheKey::SmallFile(file_id));
+                self.dir_entry_cache.remove(crate::cache::CacheKey::DirEntry {
+                    dir_id: dirid,
+                    name: name.clone(),
+                });
 
                 Ok(())
             }

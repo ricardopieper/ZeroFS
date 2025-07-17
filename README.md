@@ -51,8 +51,8 @@ Both modes share the same encrypted, compressed, cached storage backend.
 
 ### Required Environment Variables
 
-- `SLATEDB_CACHE_DIR`: Directory path for caching data (required)
-- `SLATEDB_CACHE_SIZE_GB`: Cache size in gigabytes (required, must be a positive number)
+- `SLATEDB_CACHE_DIR`: Directory path for SlateDB disk cache (required)
+- `SLATEDB_CACHE_SIZE_GB`: SlateDB disk cache size in gigabytes (required, must be a positive number)
 - `ZEROFS_ENCRYPTION_PASSWORD`: Password for filesystem encryption (required)
 
 ### Optional Environment Variables
@@ -65,6 +65,7 @@ Both modes share the same encrypted, compressed, cached storage backend.
 - `AWS_ALLOW_HTTP`: Allow HTTP connections (default: "false")
 - `ZEROFS_NBD_PORTS`: Comma-separated list of ports for NBD servers (optional)
 - `ZEROFS_NBD_DEVICE_SIZES_GB`: Comma-separated list of device sizes in GB (optional, must match NBD_PORTS count)
+- `ZEROFS_MEMORY_CACHE_SIZE_GB`: Size of ZeroFS in-memory cache in GB (optional, default: 0.25GB)
 
 ### Encryption
 

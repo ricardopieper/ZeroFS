@@ -1,3 +1,4 @@
+use crate::cache::{CacheKey, CacheValue, UnifiedCache};
 use anyhow::Result;
 use bytes::Bytes;
 use chacha20poly1305::{
@@ -92,6 +93,8 @@ impl EncryptionManager {
 pub struct EncryptedWriteBatch {
     inner: WriteBatch,
     encryptor: Arc<EncryptionManager>,
+    // Queue of cache operations to apply after successful write
+    cache_ops: Vec<(Bytes, Option<Vec<u8>>)>, // (key, Some(value) for put, None for delete)
 }
 
 impl EncryptedWriteBatch {
@@ -99,23 +102,37 @@ impl EncryptedWriteBatch {
         Self {
             inner: WriteBatch::new(),
             encryptor,
+            cache_ops: Vec::new(),
         }
     }
 
     pub fn put_bytes(&mut self, key: &bytes::Bytes, value: &[u8]) -> Result<()> {
         let key_str =
             std::str::from_utf8(key).map_err(|e| anyhow::anyhow!("Invalid UTF8 in key: {}", e))?;
+
+        // Queue cache operation if this is a chunk
+        if key_str.starts_with("chunk:") {
+            self.cache_ops.push((key.clone(), Some(value.to_vec())));
+        }
+
         let encrypted = self.encryptor.encrypt(key_str, value)?;
         self.inner.put(key, &encrypted);
         Ok(())
     }
 
     pub fn delete_bytes(&mut self, key: &bytes::Bytes) {
+        // Queue cache operation if this is a chunk
+        if let Ok(key_str) = std::str::from_utf8(key) {
+            if key_str.starts_with("chunk:") {
+                self.cache_ops.push((key.clone(), None));
+            }
+        }
+
         self.inner.delete(key);
     }
 
-    pub fn into_inner(self) -> WriteBatch {
-        self.inner
+    pub fn into_inner(self) -> (WriteBatch, Vec<(Bytes, Option<Vec<u8>>)>) {
+        (self.inner, self.cache_ops)
     }
 }
 
@@ -123,22 +140,70 @@ impl EncryptedWriteBatch {
 pub struct EncryptedDb {
     inner: Arc<slatedb::Db>,
     encryptor: Arc<EncryptionManager>,
+    cache: Option<Arc<UnifiedCache>>,
 }
 
 impl EncryptedDb {
+    // Parse chunk key format: "chunk:<inode_id>/<block_index>"
+    fn parse_chunk_key(key: &str) -> Option<(u64, u64)> {
+        if !key.starts_with("chunk:") {
+            return None;
+        }
+        let chunk_part = &key[6..]; // Skip "chunk:"
+        let parts: Vec<&str> = chunk_part.split('/').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let inode_id = parts[0].parse::<u64>().ok()?;
+        let block_index = parts[1].parse::<u64>().ok()?;
+        Some((inode_id, block_index))
+    }
+
     pub fn new(db: Arc<slatedb::Db>, encryptor: Arc<EncryptionManager>) -> Self {
         Self {
             inner: db,
             encryptor,
+            cache: None,
         }
     }
 
+    pub fn with_cache(mut self, cache: Arc<UnifiedCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
     pub async fn get_bytes(&self, key: &bytes::Bytes) -> Result<Option<bytes::Bytes>> {
+        let key_str =
+            std::str::from_utf8(key).map_err(|e| anyhow::anyhow!("Invalid UTF8 in key: {}", e))?;
+
+        // Check if this is a chunk and if we have cache
+        if let (Some(cache), Some((inode_id, block_index))) =
+            (&self.cache, Self::parse_chunk_key(key_str))
+        {
+            let cache_key = CacheKey::Block {
+                inode_id,
+                block_index,
+            };
+            if let Some(CacheValue::Block(cached_data)) = cache.get(cache_key.clone()).await {
+                return Ok(Some(bytes::Bytes::from(cached_data.as_ref().clone())));
+            }
+        }
+
         match self.inner.get(key).await? {
             Some(encrypted) => {
-                let key_str = std::str::from_utf8(key)
-                    .map_err(|e| anyhow::anyhow!("Invalid UTF8 in key: {}", e))?;
                 let decrypted = self.encryptor.decrypt(key_str, &encrypted)?;
+
+                if let (Some(cache), Some((inode_id, block_index))) =
+                    (&self.cache, Self::parse_chunk_key(key_str))
+                {
+                    let cache_key = CacheKey::Block {
+                        inode_id,
+                        block_index,
+                    };
+                    let cache_value = CacheValue::Block(Arc::new(decrypted.clone()));
+                    cache.insert(cache_key, cache_value, true);
+                }
+
                 Ok(Some(bytes::Bytes::from(decrypted)))
             }
             None => Ok(None),
@@ -197,9 +262,40 @@ impl EncryptedDb {
         batch: EncryptedWriteBatch,
         options: &WriteOptions,
     ) -> Result<()> {
-        self.inner
-            .write_with_options(batch.into_inner(), options)
-            .await?;
+        let (inner_batch, cache_ops) = batch.into_inner();
+
+        // Write to database first
+        self.inner.write_with_options(inner_batch, options).await?;
+
+        // Update cache after successful write
+        if let Some(cache) = &self.cache {
+            for (key, value) in cache_ops {
+                if let Ok(key_str) = std::str::from_utf8(&key) {
+                    if let Some((inode_id, block_index)) = Self::parse_chunk_key(key_str) {
+                        match value {
+                            Some(data) => {
+                                // Insert chunk into cache with prefer_on_disk=true
+                                let cache_key = CacheKey::Block {
+                                    inode_id,
+                                    block_index,
+                                };
+                                let cache_value = CacheValue::Block(Arc::new(data));
+                                cache.insert(cache_key, cache_value, true);
+                            }
+                            None => {
+                                // Remove chunk from cache
+                                let cache_key = CacheKey::Block {
+                                    inode_id,
+                                    block_index,
+                                };
+                                cache.remove(cache_key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

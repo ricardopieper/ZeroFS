@@ -14,6 +14,7 @@ mod test_helpers;
 #[cfg(test)]
 mod posix_tests;
 
+use crate::cache::{CacheKey, CacheValue};
 use crate::filesystem::{CacheConfig, S3Config, SlateDbFs};
 use crate::inode::Inode;
 use crate::nbd::NBDServer;
@@ -62,7 +63,13 @@ impl NFSFileSystem for SlateDbFs {
                 check_access(&dir_inode, &creds, AccessMode::Execute)?;
                 let name = filename_str.to_string();
 
-                if let Some(inode_id) = self.dir_entry_cache.get(dirid, &name) {
+                let cache_key = CacheKey::DirEntry {
+                    dir_id: dirid,
+                    name: name.clone(),
+                };
+                if let Some(CacheValue::DirEntry(inode_id)) =
+                    self.dir_entry_cache.get(cache_key).await
+                {
                     debug!("lookup cache hit: {} -> inode {}", name, inode_id);
                     return Ok(inode_id);
                 }
@@ -81,7 +88,12 @@ impl NFSFileSystem for SlateDbFs {
                         let inode_id = u64::from_le_bytes(bytes);
                         debug!("lookup found: {} -> inode {}", name, inode_id);
 
-                        self.dir_entry_cache.insert(dirid, name.clone(), inode_id);
+                        let cache_key = crate::cache::CacheKey::DirEntry {
+                            dir_id: dirid,
+                            name: name.clone(),
+                        };
+                        let cache_value = crate::cache::CacheValue::DirEntry(inode_id);
+                        self.dir_entry_cache.insert(cache_key, cache_value, false);
 
                         Ok(inode_id)
                     }
@@ -334,6 +346,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("SLATEDB_CACHE_SIZE_GB environment variable is required")
             .parse::<f64>()
             .expect("SLATEDB_CACHE_SIZE_GB must be a valid number"),
+        memory_cache_size_gb: std::env::var("ZEROFS_MEMORY_CACHE_SIZE_GB")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok()),
     };
 
     if cache_config.max_cache_size_gb <= 0.0 {
@@ -341,6 +356,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!("Starting SlateDB NFS server with S3 backend");
+
     if !s3_config.endpoint.is_empty() {
         info!("S3 Endpoint: {}", s3_config.endpoint);
     }

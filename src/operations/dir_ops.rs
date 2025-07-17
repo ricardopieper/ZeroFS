@@ -11,6 +11,7 @@ use std::sync::atomic::Ordering;
 use tracing::debug;
 
 use super::common::validate_filename;
+use crate::cache::CacheKey;
 use crate::filesystem::{SlateDbFs, get_current_time};
 use crate::inode::{DirectoryInode, Inode};
 use crate::permissions::{AccessMode, Credentials, check_access};
@@ -174,7 +175,7 @@ impl SlateDbFs {
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                self.metadata_cache.remove(&dirid);
+                self.metadata_cache.remove(CacheKey::Metadata(dirid));
 
                 Ok((
                     new_dir_id,

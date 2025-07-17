@@ -1,107 +1,90 @@
 use crate::inode::{Inode, InodeId};
 use foyer::{Cache, CacheBuilder};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub const SMALL_FILE_THRESHOLD_BYTES: u64 = 512 * 1024; // 512KB
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct DirEntryCacheKey {
-    pub dir_id: InodeId,
-    pub name: String,
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub enum CacheKey {
+    Metadata(InodeId),
+    SmallFile(InodeId),
+    DirEntry { dir_id: InodeId, name: String },
+    Block { inode_id: InodeId, block_index: u64 },
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum CacheValue {
+    Metadata(#[serde(with = "serde_arc")] Arc<Inode>),
+    SmallFile(#[serde(with = "serde_arc")] Arc<Vec<u8>>),
+    DirEntry(InodeId),
+    Block(#[serde(with = "serde_arc")] Arc<Vec<u8>>),
+}
+
+mod serde_arc {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::sync::Arc;
+
+    pub fn serialize<S, T>(arc: &Arc<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        (**arc).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Arc<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        Ok(Arc::new(T::deserialize(deserializer)?))
+    }
 }
 
 #[derive(Clone)]
-pub struct MetadataCache {
-    cache: Arc<Cache<InodeId, Arc<Inode>>>,
+pub struct UnifiedCache {
+    cache: Arc<Cache<Vec<u8>, Vec<u8>>>,
 }
 
-#[derive(Clone)]
-pub struct SmallFileCache {
-    cache: Arc<Cache<InodeId, Arc<Vec<u8>>>>,
-}
+impl UnifiedCache {
+    pub async fn new(
+        _cache_dir: &str,
+        _disk_capacity_gb: f64,
+        memory_capacity_gb: Option<f64>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // For now, use only in-memory cache to avoid async operation race conditions
+        let memory_capacity_bytes =
+            (memory_capacity_gb.unwrap_or(0.25) * 1024.0 * 1024.0 * 1024.0) as usize;
 
-#[derive(Clone)]
-pub struct DirEntryCache {
-    cache: Arc<Cache<DirEntryCacheKey, InodeId>>,
-}
-
-impl MetadataCache {
-    pub fn new(capacity: usize) -> Self {
-        let cache = CacheBuilder::new(capacity).with_shards(64).build();
-
-        Self {
-            cache: Arc::new(cache),
-        }
-    }
-
-    pub fn get(&self, inode_id: &InodeId) -> Option<Arc<Inode>> {
-        self.cache.get(inode_id).map(|entry| entry.value().clone())
-    }
-
-    pub fn insert(&self, inode_id: InodeId, inode: Arc<Inode>) {
-        self.cache.insert(inode_id, inode);
-    }
-
-    pub fn remove(&self, inode_id: &InodeId) {
-        self.cache.remove(inode_id);
-    }
-}
-
-impl SmallFileCache {
-    pub fn new(capacity_bytes: usize) -> Self {
-        let cache = CacheBuilder::new(capacity_bytes)
-            .with_shards(64)
-            .with_weighter(|_key: &InodeId, value: &Arc<Vec<u8>>| value.capacity())
+        let cache = CacheBuilder::new(memory_capacity_bytes)
+            .with_name("zerofs-unified-cache")
+            .with_weighter(|_key: &Vec<u8>, value: &Vec<u8>| -> usize { _key.len() + value.len() })
             .build();
 
-        Self {
+        Ok(Self {
             cache: Arc::new(cache),
+        })
+    }
+
+    pub async fn get(&self, key: CacheKey) -> Option<CacheValue> {
+        let serialized_key = bincode::serialize(&key).ok()?;
+        let entry = self.cache.get(&serialized_key)?;
+        bincode::deserialize(entry.value()).ok()
+    }
+
+    pub fn insert(&self, key: CacheKey, value: CacheValue, _prefer_on_disk: bool) {
+        if let (Ok(serialized_key), Ok(serialized_value)) =
+            (bincode::serialize(&key), bincode::serialize(&value))
+        {
+            // For now, ignore prefer_on_disk since we're using in-memory cache only
+            self.cache.insert(serialized_key, serialized_value);
         }
     }
 
-    pub fn get(&self, inode_id: &InodeId) -> Option<Arc<Vec<u8>>> {
-        self.cache.get(inode_id).map(|entry| entry.value().clone())
-    }
-
-    pub fn insert(&self, inode_id: InodeId, data: Vec<u8>) {
-        // Only cache files under the threshold
-        if data.len() <= SMALL_FILE_THRESHOLD_BYTES as usize {
-            self.cache.insert(inode_id, Arc::new(data));
+    pub fn remove(&self, key: CacheKey) {
+        if let Ok(serialized_key) = bincode::serialize(&key) {
+            self.cache.remove(&serialized_key);
         }
-    }
-
-    pub fn remove(&self, inode_id: &InodeId) {
-        self.cache.remove(inode_id);
-    }
-}
-
-impl DirEntryCache {
-    pub fn new(capacity: usize) -> Self {
-        let cache = CacheBuilder::new(capacity).with_shards(64).build();
-
-        Self {
-            cache: Arc::new(cache),
-        }
-    }
-
-    pub fn get(&self, dir_id: InodeId, name: &str) -> Option<InodeId> {
-        let key = DirEntryCacheKey {
-            dir_id,
-            name: name.to_string(),
-        };
-        self.cache.get(&key).map(|entry| *entry.value())
-    }
-
-    pub fn insert(&self, dir_id: InodeId, name: String, inode_id: InodeId) {
-        let key = DirEntryCacheKey { dir_id, name };
-        self.cache.insert(key, inode_id);
-    }
-
-    pub fn remove(&self, dir_id: InodeId, name: &str) {
-        let key = DirEntryCacheKey {
-            dir_id,
-            name: name.to_string(),
-        };
-        self.cache.remove(&key);
     }
 }

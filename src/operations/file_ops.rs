@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use tracing::{debug, error};
 
 use super::common::validate_filename;
+use crate::cache::{self, CacheKey, CacheValue};
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::{FileInode, Inode, InodeId};
 use crate::permissions::{AccessMode, Credentials, check_access, validate_mode};
@@ -123,8 +124,8 @@ impl SlateDbFs {
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
                 debug!("DB write took: {:?}", db_write_start.elapsed());
 
-                self.metadata_cache.remove(&id);
-                self.small_file_cache.remove(&id);
+                self.metadata_cache.remove(CacheKey::Metadata(id));
+                self.small_file_cache.remove(CacheKey::SmallFile(id));
 
                 let elapsed = start_time.elapsed();
                 debug!(
@@ -269,7 +270,7 @@ impl SlateDbFs {
                         nfsstat3::NFS3ERR_IO
                     })?;
 
-                self.metadata_cache.remove(&dirid);
+                self.metadata_cache.remove(CacheKey::Metadata(dirid));
 
                 Ok((file_id, Inode::File(file_inode).to_fattr3(file_id)))
             }
@@ -317,11 +318,14 @@ impl SlateDbFs {
                     return Ok((vec![], true));
                 }
 
-                if file.size <= crate::cache::SMALL_FILE_THRESHOLD_BYTES
+                if file.size <= cache::SMALL_FILE_THRESHOLD_BYTES
                     && offset == 0
                     && count as u64 >= file.size
                 {
-                    if let Some(cached_data) = self.small_file_cache.get(&id) {
+                    let cache_key = CacheKey::SmallFile(id);
+                    if let Some(CacheValue::SmallFile(cached_data)) =
+                        self.small_file_cache.get(cache_key).await
+                    {
                         debug!("Serving file {} from small file cache", id);
                         let eof = file.size <= count as u64;
                         return Ok(((*cached_data).clone(), eof));
@@ -415,7 +419,10 @@ impl SlateDbFs {
                     && end >= file.size
                 {
                     debug!("Caching small file {} ({} bytes)", id, file.size);
-                    self.small_file_cache.insert(id, result.clone());
+                    let cache_key = crate::cache::CacheKey::SmallFile(id);
+                    let cache_value =
+                        crate::cache::CacheValue::SmallFile(std::sync::Arc::new(result.clone()));
+                    self.small_file_cache.insert(cache_key, cache_value, false);
                 }
 
                 Ok((result, eof))

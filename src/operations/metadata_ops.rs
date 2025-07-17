@@ -7,6 +7,7 @@ use slatedb::config::WriteOptions;
 use tracing::debug;
 
 use super::common::validate_filename;
+use crate::cache::CacheKey;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};
 use crate::inode::{Inode, SpecialInode};
 use crate::permissions::{
@@ -190,8 +191,8 @@ impl SlateDbFs {
                             .await
                             .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                        self.metadata_cache.remove(&id);
-                        self.small_file_cache.remove(&id);
+                        self.metadata_cache.remove(CacheKey::Metadata(id));
+                        self.small_file_cache.remove(CacheKey::SmallFile(id));
 
                         return Ok(inode.to_fattr3(id));
                     }
@@ -652,7 +653,7 @@ impl SlateDbFs {
                     .await
                     .map_err(|_| nfsstat3::NFS3ERR_IO)?;
 
-                self.metadata_cache.remove(&dirid);
+                self.metadata_cache.remove(CacheKey::Metadata(dirid));
 
                 Ok((special_id, inode.to_fattr3(special_id)))
             }
