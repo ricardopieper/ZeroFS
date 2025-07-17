@@ -206,6 +206,115 @@ zpool create global-pool mirror /dev/nbd0 /dev/nbd1 /dev/nbd2
 
 This turns expensive geo-distributed storage infrastructure into a few simple commands.
 
+## Tiered Storage with ZFS L2ARC
+
+Since ZeroFS makes S3 behave like a regular block device, you can use ZFS's L2ARC to create automatic storage tiering:
+
+```bash
+# Create your S3-backed pool
+zpool create mypool /dev/nbd0 /dev/nbd1
+
+# Add local NVMe as L2ARC cache
+zpool add mypool cache /dev/nvme0n1
+
+# Check your setup
+zpool iostat -v mypool
+```
+
+With this setup, ZFS automatically manages data placement across storage tiers:
+
+NVMe L2ARC: for frequently accessed data
+ZeroFS caches: Sub-millisecond latency for warm data
+S3 backend:for everything else
+
+The tiering is transparent to applications. A PostgreSQL database sees consistent performance for hot data while storing years of historical data at S3 prices. No manual archival processes or capacity planning emergencies.
+
+## PostgreSQL Performance
+
+Here's pgbench running on PostgreSQL with ZeroFS + L2ARC as the storage backend:
+
+### Read/Write Performance
+
+```
+postgres@ubuntu-16gb-fsn1-1:/root$ pgbench -c 50 -j 15 -t 100000 example
+pgbench (16.9 (Ubuntu 16.9-0ubuntu0.24.04.1))
+starting vacuum...end.
+transaction type: <builtin: TPC-B (sort of)>
+scaling factor: 50
+query mode: simple
+number of clients: 50
+number of threads: 15
+maximum number of tries: 1
+number of transactions per client: 100000
+number of transactions actually processed: 5000000/5000000
+number of failed transactions: 0 (0.000%)
+latency average = 0.943 ms
+initial connection time = 48.043 ms
+tps = 53041.006947 (without initial connection time)
+```
+### Read-Only Performance
+
+```
+postgres@ubuntu-16gb-fsn1-1:/root$ pgbench -c 50 -j 15 -t 100000 -S example
+pgbench (16.9 (Ubuntu 16.9-0ubuntu0.24.04.1))
+starting vacuum...end.
+transaction type: <builtin: select only>
+scaling factor: 50
+query mode: simple
+number of clients: 50
+number of threads: 15
+maximum number of tries: 1
+number of transactions per client: 100000
+number of transactions actually processed: 5000000/5000000
+number of failed transactions: 0 (0.000%)
+latency average = 0.121 ms
+initial connection time = 53.358 ms
+tps = 413436.248089 (without initial connection time)
+```
+
+These are standard pgbench runs with 50 concurrent clients. The underlying data is stored in S3, with hot data served from L2ARC and ZeroFS caches. Performance is comparable to local NVMe while the actual data resides in S3 at $0.023/GB/month.
+
+### Example architecture
+
+```
+                         PostgreSQL Client
+                                   |
+                                   | SQL queries
+                                   |
+                            +--------------+
+                            |  PG Proxy    |
+                            | (HAProxy/    |
+                            |  PgBouncer)  |
+                            +--------------+
+                               /        \
+                              /          \
+                   Synchronous            Synchronous
+                   Replication            Replication
+                            /              \
+                           /                \
+              +---------------+        +---------------+
+              | PostgreSQL 1  |        | PostgreSQL 2  |
+              | (Primary)     |◄------►| (Standby)     |
+              +---------------+        +---------------+
+                      |                        |
+                      | POSIX filesystem ops   |
+                      |                        |
+              +---------------+        +---------------+
+              |   ZFS Pool 1  |        |   ZFS Pool 2  |
+              | (3-way mirror)|        | (3-way mirror)|
+              +---------------+        +---------------+
+               /      |      \          /      |      \
+              /       |       \        /       |       \
+        NBD:10809 NBD:10810 NBD:10811  NBD:10812 NBD:10813 NBD:10814
+             |        |        |        |        |        |
+        +--------++--------++--------++--------++--------++--------+
+        |ZeroFS 1||ZeroFS 2||ZeroFS 3||ZeroFS 4||ZeroFS 5||ZeroFS 6|
+        +--------++--------++--------++--------++--------++--------+
+             |        |        |        |        |        |
+             |        |        |        |        |        |
+        S3-Region1 S3-Region2 S3-Region3 S3-Region4 S3-Region5 S3-Region6
+        (us-east) (eu-west) (ap-south) (us-west) (eu-north) (ap-east)
+```
 
 ## Why NFS?
 
