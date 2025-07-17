@@ -322,6 +322,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             == "true",
     };
 
+    let nfs_host_ip = std::env::var("NFS_HOST_IP").unwrap_or_else(|_| "127.0.0.1".to_string());
+
     let db_path = args.get(1).cloned().unwrap_or_else(|| "test".to_string());
 
     let cache_config = CacheConfig {
@@ -417,9 +419,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fs = SlateDbFs::new_with_s3(s3_config, cache_config, db_path, encryption_key).await?;
 
-    let listener = NFSTcpListener::bind(&format!("127.0.0.1:{HOSTPORT}"), fs).await?;
+    let listener = NFSTcpListener::bind(&format!("{nfs_host_ip}:{HOSTPORT}"), fs).await?;
 
-    info!("NFS server listening on 127.0.0.1:{}", HOSTPORT);
+    info!("NFS server listening on {nfs_host_ip}:{HOSTPORT}");
     listener.handle_forever().await?;
 
     Ok(())
