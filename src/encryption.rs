@@ -131,6 +131,7 @@ impl EncryptedWriteBatch {
         self.inner.delete(key);
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn into_inner(self) -> (WriteBatch, Vec<(Bytes, Option<Vec<u8>>)>) {
         (self.inner, self.cache_ops)
     }
