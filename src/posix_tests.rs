@@ -421,7 +421,7 @@ mod tests {
             .unwrap();
 
         for i in 0..10 {
-            let name = format!("file{}", i);
+            let name = format!("file{i}");
             fs.create(
                 &test_auth(),
                 dir_id,
@@ -457,7 +457,7 @@ mod tests {
         assert!(names.contains(&".".to_string()));
         assert!(names.contains(&"..".to_string()));
         for i in 0..10 {
-            assert!(names.contains(&format!("file{}", i)));
+            assert!(names.contains(&format!("file{i}")));
         }
     }
 
@@ -941,9 +941,7 @@ mod tests {
             assert_eq!(
                 new_attr.mode & 0o7777,
                 mode,
-                "Mode should be {} for {}",
-                mode,
-                description
+                "Mode should be {mode} for {description}"
             );
         }
     }

@@ -481,7 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     fs_arc
                         .mkdir(&auth, 0, &nbd_name, &attr)
                         .await
-                        .map_err(|e| format!("Failed to create .nbd directory: {:?}", e))?;
+                        .map_err(|e| format!("Failed to create .nbd directory: {e:?}"))?;
                     info!("Created .nbd directory");
                 }
             }

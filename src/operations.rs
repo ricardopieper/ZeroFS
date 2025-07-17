@@ -544,7 +544,7 @@ mod tests {
             fs.process_create(
                 &test_auth(),
                 0,
-                format!("file{}.txt", i).as_bytes(),
+                format!("file{i}.txt").as_bytes(),
                 sattr3::default(),
             )
             .await

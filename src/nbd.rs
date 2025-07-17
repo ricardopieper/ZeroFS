@@ -128,9 +128,8 @@ impl NBDServer {
             .lookup(&auth, 0, &nbd_name)
             .await
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to lookup .nbd directory: {:?}", e),
+                io::Error::other(
+                    format!("Failed to lookup .nbd directory: {e:?}"),
                 )
             })?;
 
@@ -146,9 +145,8 @@ impl NBDServer {
                         .getattr(&auth, device_inode)
                         .await
                         .map_err(|e| {
-                            io::Error::new(
-                                io::ErrorKind::Other,
-                                format!("Failed to get device attributes: {:?}", e),
+                            io::Error::other(
+                                format!("Failed to get device attributes: {e:?}"),
                             )
                         })?;
 
@@ -188,9 +186,8 @@ impl NBDServer {
                     .create(&auth, nbd_dir_inode, &device_name, attr)
                     .await
                     .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Failed to create device file: {:?}", e),
+                        io::Error::other(
+                            format!("Failed to create device file: {e:?}"),
                         )
                     })?;
 
@@ -201,9 +198,8 @@ impl NBDServer {
                         .write(&auth, device_inode, device.size - 1, &data)
                         .await
                         .map_err(|e| {
-                            io::Error::new(
-                                io::ErrorKind::Other,
-                                format!("Failed to set device size: {:?}", e),
+                            io::Error::other(
+                                format!("Failed to set device size: {e:?}"),
                             )
                         })?;
                 }
@@ -343,7 +339,7 @@ async fn handle_export_name_option(
     let device = devices.get(name.as_ref()).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            format!("Device {} not found", name),
+            format!("Device {name} not found"),
         )
     })?;
 
@@ -392,7 +388,7 @@ async fn handle_go_option(
     let device = devices.get(name.as_ref()).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            format!("Device {} not found", name),
+            format!("Device {name} not found"),
         )
     })?;
 
@@ -461,9 +457,8 @@ async fn handle_transmission(
 
     // Get device inode
     let nbd_dir_inode = filesystem.lookup(&auth, 0, &nbd_name).await.map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to lookup .nbd directory: {:?}", e),
+        io::Error::other(
+            format!("Failed to lookup .nbd directory: {e:?}"),
         )
     })?;
 
@@ -471,9 +466,8 @@ async fn handle_transmission(
         .lookup(&auth, nbd_dir_inode, &device_name)
         .await
         .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to lookup device file: {:?}", e),
+            io::Error::other(
+                format!("Failed to lookup device file: {e:?}"),
             )
         })?;
 
