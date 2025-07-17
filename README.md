@@ -297,7 +297,7 @@ These are standard pgbench runs with 50 concurrent clients. The underlying data 
               | (Primary)     |◄------►| (Standby)     |
               +---------------+        +---------------+
                       |                        |
-                      | POSIX filesystem ops   |
+                      |  POSIX filesystem ops  |
                       |                        |
               +---------------+        +---------------+
               |   ZFS Pool 1  |        |   ZFS Pool 2  |
@@ -306,12 +306,12 @@ These are standard pgbench runs with 50 concurrent clients. The underlying data 
                /      |      \          /      |      \
               /       |       \        /       |       \
         NBD:10809 NBD:10810 NBD:10811  NBD:10812 NBD:10813 NBD:10814
-             |        |        |        |        |        |
+             |        |        |           |        |        |
         +--------++--------++--------++--------++--------++--------+
         |ZeroFS 1||ZeroFS 2||ZeroFS 3||ZeroFS 4||ZeroFS 5||ZeroFS 6|
         +--------++--------++--------++--------++--------++--------+
-             |        |        |        |        |        |
-             |        |        |        |        |        |
+             |         |         |         |         |         |
+             |         |         |         |         |         |
         S3-Region1 S3-Region2 S3-Region3 S3-Region4 S3-Region5 S3-Region6
         (us-east) (eu-west) (ap-south) (us-west) (eu-north) (ap-east)
 ```
