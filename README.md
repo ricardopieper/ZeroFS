@@ -3,6 +3,8 @@
 
 ZeroFS makes S3 storage feel like a real filesystem. Built on [SlateDB](https://github.com/slatedb/slatedb), it provides both **file-level access via NFS** and **block-level access via NBD**. Fast enough to compile code on, with clients already built into your OS. No FUSE drivers, no kernel modules, just mount and go.
 
+Join our community on Discord: https://discord.gg/eGKNQTbG
+
 **Key Features:**
 - **NFS Server** - Mount as a network filesystem on any OS
 - **NBD Server** - Access as raw block devices for ZFS, databases, or any filesystem  
