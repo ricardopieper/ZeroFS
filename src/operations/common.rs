@@ -1,7 +1,7 @@
 use crate::filesystem::SlateDbFs;
 use crate::inode::{Inode, InodeId};
 use crate::permissions::{AccessMode, Credentials, check_access};
-use nfsserve::nfs::nfsstat3;
+use zerofs_nfsserve::nfs::nfsstat3;
 
 // POSIX limits
 pub const NAME_MAX: usize = 255; // Maximum filename length

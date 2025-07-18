@@ -2,8 +2,8 @@
 mod tests {
     use crate::filesystem::SlateDbFs;
     use crate::test_helpers::test_helpers_mod::{filename, test_auth};
-    use nfsserve::nfs::*;
-    use nfsserve::vfs::NFSFileSystem;
+    use zerofs_nfsserve::nfs::*;
+    use zerofs_nfsserve::vfs::NFSFileSystem;
 
     async fn create_test_fs() -> SlateDbFs {
         SlateDbFs::new_in_memory().await.unwrap()

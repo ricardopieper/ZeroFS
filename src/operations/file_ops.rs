@@ -1,9 +1,9 @@
 use futures::stream::{self, StreamExt};
-use nfsserve::nfs::{fattr3, fileid3, nfsstat3, sattr3, set_gid3, set_mode3, set_uid3};
-use nfsserve::vfs::AuthContext;
 use slatedb::config::WriteOptions;
 use std::sync::atomic::Ordering;
 use tracing::{debug, error};
+use zerofs_nfsserve::nfs::{fattr3, fileid3, nfsstat3, sattr3, set_gid3, set_mode3, set_uid3};
+use zerofs_nfsserve::vfs::AuthContext;
 
 use super::common::validate_filename;
 use crate::cache::{self, CacheKey, CacheValue};

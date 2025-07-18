@@ -1,6 +1,6 @@
-use nfsserve::nfs::{fileid3, nfsstat3};
-use nfsserve::vfs::AuthContext;
 use slatedb::config::WriteOptions;
+use zerofs_nfsserve::nfs::{fileid3, nfsstat3};
+use zerofs_nfsserve::vfs::AuthContext;
 
 use super::common::validate_filename;
 use crate::filesystem::{CHUNK_SIZE, SlateDbFs, get_current_time};

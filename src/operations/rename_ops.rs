@@ -1,7 +1,7 @@
-use nfsserve::nfs::nfsstat3;
-use nfsserve::vfs::AuthContext;
 use slatedb::config::WriteOptions;
 use tracing::debug;
+use zerofs_nfsserve::nfs::nfsstat3;
+use zerofs_nfsserve::vfs::AuthContext;
 
 use super::common::validate_filename;
 use crate::cache::CacheKey;

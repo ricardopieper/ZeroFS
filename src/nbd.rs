@@ -111,8 +111,8 @@ impl NBDServer {
     }
 
     async fn initialize_device(&self, device: &NBDDevice) -> io::Result<()> {
-        use nfsserve::nfs::{nfsstring, sattr3, set_mode3};
-        use nfsserve::vfs::{AuthContext, NFSFileSystem};
+        use zerofs_nfsserve::nfs::{nfsstring, sattr3, set_mode3};
+        use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
         let auth = AuthContext {
             uid: 0,
@@ -168,11 +168,11 @@ impl NBDServer {
                 );
                 let attr = sattr3 {
                     mode: set_mode3::mode(0o600),
-                    uid: nfsserve::nfs::set_uid3::uid(0),
-                    gid: nfsserve::nfs::set_gid3::gid(0),
-                    size: nfsserve::nfs::set_size3::Void,
-                    atime: nfsserve::nfs::set_atime::DONT_CHANGE,
-                    mtime: nfsserve::nfs::set_mtime::DONT_CHANGE,
+                    uid: zerofs_nfsserve::nfs::set_uid3::uid(0),
+                    gid: zerofs_nfsserve::nfs::set_gid3::gid(0),
+                    size: zerofs_nfsserve::nfs::set_size3::Void,
+                    atime: zerofs_nfsserve::nfs::set_atime::DONT_CHANGE,
+                    mtime: zerofs_nfsserve::nfs::set_mtime::DONT_CHANGE,
                 };
 
                 let (device_inode, _) = self
@@ -428,8 +428,8 @@ async fn handle_transmission(
     filesystem: Arc<SlateDbFs>,
     device: NBDDevice,
 ) -> io::Result<()> {
-    use nfsserve::nfs::nfsstring;
-    use nfsserve::vfs::{AuthContext, NFSFileSystem};
+    use zerofs_nfsserve::nfs::nfsstring;
+    use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
     let auth = AuthContext {
         uid: 0,
@@ -526,7 +526,7 @@ async fn handle_read_command(
     offset: u64,
     length: u32,
 ) -> u32 {
-    use nfsserve::vfs::{AuthContext, NFSFileSystem};
+    use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
     let auth = AuthContext {
         uid: 0,
@@ -557,7 +557,7 @@ async fn handle_write_command(
     length: u32,
     _flags: u16,
 ) -> u32 {
-    use nfsserve::vfs::{AuthContext, NFSFileSystem};
+    use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
     let auth = AuthContext {
         uid: 0,
@@ -630,7 +630,7 @@ async fn handle_write_zeroes_command(
     offset: u64,
     length: u32,
 ) -> u32 {
-    use nfsserve::vfs::{AuthContext, NFSFileSystem};
+    use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
     let auth = AuthContext {
         uid: 0,

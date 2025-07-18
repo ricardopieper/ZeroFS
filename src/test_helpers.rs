@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod test_helpers_mod {
-    use nfsserve::nfs::nfsstring;
-    use nfsserve::vfs::AuthContext;
+    use zerofs_nfsserve::nfs::nfsstring;
+    use zerofs_nfsserve::vfs::AuthContext;
 
     pub fn filename(s: &[u8]) -> nfsstring {
         nfsstring(s.to_vec())

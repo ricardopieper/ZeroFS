@@ -1,10 +1,10 @@
-use nfsserve::nfs::{
+use slatedb::config::WriteOptions;
+use tracing::debug;
+use zerofs_nfsserve::nfs::{
     fattr3, fileid3, ftype3, nfsstat3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
     set_size3, set_uid3,
 };
-use nfsserve::vfs::AuthContext;
-use slatedb::config::WriteOptions;
-use tracing::debug;
+use zerofs_nfsserve::vfs::AuthContext;
 
 use super::common::validate_filename;
 use crate::cache::CacheKey;

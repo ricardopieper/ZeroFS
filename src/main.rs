@@ -19,11 +19,11 @@ use crate::filesystem::{CacheConfig, S3Config, SlateDbFs};
 use crate::inode::Inode;
 use crate::nbd::NBDServer;
 use async_trait::async_trait;
-use nfsserve::nfs::{ftype3, *};
-use nfsserve::tcp::{NFSTcp, NFSTcpListener};
-use nfsserve::vfs::{AuthContext, NFSFileSystem, ReadDirResult, VFSCapabilities};
 use std::sync::Arc;
 use tracing::{debug, info};
+use zerofs_nfsserve::nfs::{ftype3, *};
+use zerofs_nfsserve::tcp::{NFSTcp, NFSTcpListener};
+use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem, ReadDirResult, VFSCapabilities};
 
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -306,6 +306,30 @@ impl NFSFileSystem for SlateDbFs {
         self.process_link(auth, fileid, linkdirid, &linkname.0)
             .await
     }
+
+    async fn commit(
+        &self,
+        _auth: &AuthContext,
+        fileid: fileid3,
+        offset: u64,
+        count: u32,
+    ) -> Result<writeverf3, nfsstat3> {
+        debug!(
+            "commit called: fileid={}, offset={}, count={}",
+            fileid, offset, count
+        );
+
+        match self.db.flush().await {
+            Ok(_) => {
+                debug!("commit successful for file {}", fileid);
+                Ok(self.get_write_verf())
+            }
+            Err(e) => {
+                tracing::error!("commit failed for file {}: {}", fileid, e);
+                Err(nfsstat3::NFS3ERR_IO)
+            }
+        }
+    }
 }
 
 const HOSTPORT: u32 = 2049;
@@ -457,8 +481,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !nbd_ports.is_empty() {
         // Create .nbd directory once before starting any NBD servers
         {
-            use nfsserve::nfs::{nfsstring, sattr3, set_mode3};
-            use nfsserve::vfs::{AuthContext, NFSFileSystem};
+            use zerofs_nfsserve::nfs::{nfsstring, sattr3, set_mode3};
+            use zerofs_nfsserve::vfs::{AuthContext, NFSFileSystem};
 
             let auth = AuthContext {
                 uid: 0,
@@ -472,11 +496,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(_) => {
                     let attr = sattr3 {
                         mode: set_mode3::mode(0o755),
-                        uid: nfsserve::nfs::set_uid3::uid(0),
-                        gid: nfsserve::nfs::set_gid3::gid(0),
-                        size: nfsserve::nfs::set_size3::Void,
-                        atime: nfsserve::nfs::set_atime::DONT_CHANGE,
-                        mtime: nfsserve::nfs::set_mtime::DONT_CHANGE,
+                        uid: zerofs_nfsserve::nfs::set_uid3::uid(0),
+                        gid: zerofs_nfsserve::nfs::set_gid3::gid(0),
+                        size: zerofs_nfsserve::nfs::set_size3::Void,
+                        atime: zerofs_nfsserve::nfs::set_atime::DONT_CHANGE,
+                        mtime: zerofs_nfsserve::nfs::set_mtime::DONT_CHANGE,
                     };
                     fs_arc
                         .mkdir(&auth, 0, &nbd_name, &attr)
@@ -565,7 +589,7 @@ mod tests {
     use super::*;
     use crate::filesystem::SlateDbFs;
     use crate::test_helpers::test_helpers_mod::{filename, test_auth};
-    use nfsserve::nfs::{set_atime, set_mtime};
+    use zerofs_nfsserve::nfs::{set_atime, set_mtime};
 
     #[tokio::test]
     async fn test_nfs_filesystem_trait() {

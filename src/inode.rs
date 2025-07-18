@@ -1,5 +1,5 @@
-use nfsserve::nfs::{fattr3, ftype3, nfstime3, specdata3};
 use serde::{Deserialize, Serialize};
+use zerofs_nfsserve::nfs::{fattr3, ftype3, nfstime3, specdata3};
 
 pub type InodeId = u64;
 
