@@ -223,9 +223,9 @@ zpool iostat -v mypool
 
 With this setup, ZFS automatically manages data placement across storage tiers:
 
-NVMe L2ARC: for frequently accessed data
-ZeroFS caches: Sub-millisecond latency for warm data
-S3 backend:for everything else
+1. NVMe L2ARC: for frequently accessed data
+2. ZeroFS caches: Sub-millisecond latency for warm data
+3. backend:for everything else
 
 The tiering is transparent to applications. A PostgreSQL database sees consistent performance for hot data while storing years of historical data at S3 prices. No manual archival processes or capacity planning emergencies.
 
