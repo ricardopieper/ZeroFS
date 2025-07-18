@@ -319,4 +319,9 @@ impl EncryptedDb {
             .await?;
         Ok(())
     }
+
+    pub async fn flush(&self) -> Result<()> {
+        self.inner.flush().await?;
+        Ok(())
+    }
 }

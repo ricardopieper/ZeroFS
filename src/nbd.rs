@@ -587,16 +587,24 @@ async fn handle_write_command(
 }
 
 async fn handle_flush_command(
-    _filesystem: &SlateDbFs,
+    filesystem: &SlateDbFs,
     _inode: u64,
     stream: &mut TcpStream,
     cookie: u64,
 ) -> u32 {
-    // For flush, we just send success since ZeroFS handles durability automatically
-    if send_simple_reply(stream, cookie, 0, &[]).await.is_err() {
-        return NBD_EIO;
+    match filesystem.db.flush().await {
+        Ok(_) => {
+            if send_simple_reply(stream, cookie, 0, &[]).await.is_err() {
+                return NBD_EIO;
+            }
+            0
+        }
+        Err(e) => {
+            error!("NBD flush failed: {}", e);
+            let _ = send_simple_reply(stream, cookie, NBD_EIO, &[]).await;
+            NBD_EIO
+        }
     }
-    0
 }
 
 async fn handle_trim_command(
