@@ -3,6 +3,12 @@ name = "zerofs"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+strip = true
+
 [dependencies]
 nfsserve = { git = "https://github.com/Barre/nfsserve.git", rev = "850a4ad174f30899f8cec81819b5cef6ebbe7736" }
 tokio = { version = "1.46", features = ["full"] }
