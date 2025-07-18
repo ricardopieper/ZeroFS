@@ -1776,25 +1776,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nfsserve"
-version = "0.10.2"
-source = "git+https://github.com/Barre/nfsserve.git?rev=850a4ad174f30899f8cec81819b5cef6ebbe7736#850a4ad174f30899f8cec81819b5cef6ebbe7736"
-dependencies = [
- "anyhow",
- "async-trait",
- "byteorder",
- "bytestream",
- "filetime",
- "futures",
- "num-derive",
- "num-traits",
- "smallvec",
- "tokio",
- "tracing",
- "tracing-attributes",
-]
-
-[[package]]
 name = "nibble_vec"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3752,7 +3733,6 @@ dependencies = [
  "hex",
  "hkdf",
  "libc",
- "nfsserve",
  "object_store",
  "rand 0.8.5",
  "serde",
@@ -3762,7 +3742,28 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zerofs_nfsserve",
  "zstd",
+]
+
+[[package]]
+name = "zerofs_nfsserve"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ddbb9d3a488637e251aa88d36055f3598d767f6a931b59e7c855334717943df"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byteorder",
+ "bytestream",
+ "filetime",
+ "futures",
+ "num-derive",
+ "num-traits",
+ "smallvec",
+ "tokio",
+ "tracing",
+ "tracing-attributes",
 ]
 
 [[package]]

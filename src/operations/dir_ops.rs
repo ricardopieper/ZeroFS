@@ -1,14 +1,14 @@
 use bytes::Bytes;
 use futures::pin_mut;
 use futures::stream::{self, StreamExt};
-use nfsserve::nfs::{
-    fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
-    set_uid3,
-};
-use nfsserve::vfs::{AuthContext, DirEntry, ReadDirResult};
 use slatedb::config::WriteOptions;
 use std::sync::atomic::Ordering;
 use tracing::debug;
+use zerofs_nfsserve::nfs::{
+    fattr3, fileid3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime,
+    set_uid3,
+};
+use zerofs_nfsserve::vfs::{AuthContext, DirEntry, ReadDirResult};
 
 use super::common::validate_filename;
 use crate::cache::CacheKey;

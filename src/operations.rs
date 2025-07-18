@@ -12,7 +12,7 @@ mod tests {
     use crate::filesystem::SlateDbFs;
     use crate::inode::Inode;
     use crate::test_helpers::test_helpers_mod::test_auth;
-    use nfsserve::nfs::{
+    use zerofs_nfsserve::nfs::{
         ftype3, nfsstat3, nfstime3, sattr3, set_atime, set_gid3, set_mode3, set_mtime, set_size3,
         set_uid3,
     };

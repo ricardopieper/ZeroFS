@@ -1,6 +1,6 @@
 use crate::inode::Inode;
-use nfsserve::nfs::nfsstat3;
-use nfsserve::vfs::AuthContext;
+use zerofs_nfsserve::nfs::nfsstat3;
+use zerofs_nfsserve::vfs::AuthContext;
 
 const S_IRUSR: u32 = 0o400;
 const S_IWUSR: u32 = 0o200;

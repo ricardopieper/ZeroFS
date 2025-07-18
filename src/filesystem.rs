@@ -2,7 +2,6 @@ use crate::cache::{CacheKey, CacheValue, UnifiedCache};
 use crate::encryption::{EncryptedDb, EncryptionManager};
 use crate::lock_manager::LockManager;
 use bytes::Bytes;
-use nfsserve::nfs::nfsstat3;
 use object_store::aws::{AmazonS3Builder, S3ConditionalPut};
 use slatedb::config::ObjectStoreCacheOptions;
 use slatedb::db_cache::foyer::{FoyerCache, FoyerCacheOptions};
@@ -13,6 +12,7 @@ use slatedb::{
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use zerofs_nfsserve::nfs::nfsstat3;
 
 const SLATEDB_BLOCK_SIZE: usize = 64 * 1024;
 
