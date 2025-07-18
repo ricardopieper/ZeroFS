@@ -61,7 +61,7 @@ Both modes share the same encrypted, compressed, cached storage backend.
 
 - `AWS_ENDPOINT_URL`: S3-compatible endpoint URL
 - `AWS_S3_BUCKET`: S3 bucket name (default: `"slatedb"`)
-- `AWS_ACCESS_KEY_ID`: AWS access key ID.
+- `AWS_ACCESS_KEY_ID`: AWS access key ID
 - `AWS_SECRET_ACCESS_KEY`: AWS secret access key
 - `AWS_DEFAULT_REGION`: AWS region (default: `"us-east-1"`)
 - `AWS_ALLOW_HTTP`: Allow HTTP connections (default: `"false"`)
